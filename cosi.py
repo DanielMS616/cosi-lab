@@ -4,6 +4,7 @@ import argparse
 import math
 import sys
 
+from run_logging import RunLoggingError, log_run, log_step
 from temperature_analysis import analyze_temperatures
 from temperature_csv import read_temperature_csv
 
@@ -29,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
 
     With argv=None, argparse reads the process arguments. A supplied list
     contains arguments without the program name. Return 0 on success or 1
-    for expected file, format, or analysis errors. argparse exits directly
+    for expected file, format, analysis, or logging errors. argparse exits directly
     with 0 for help and 2 for invalid command-line arguments.
     """
     parser = argparse.ArgumentParser(
@@ -48,20 +49,31 @@ def main(argv: list[str] | None = None) -> int:
         help="Endlicher Schwellenwert in °C (Standard: 60.0); zählt nur Werte darüber.",
     )
     arguments.add_argument(
+        "--log-dir",
+        metavar="VERZEICHNIS",
+        help="Technische Ablaufereignisse in einer neuen JSONL-Datei protokollieren.",
+    )
+    arguments.add_argument(
         "-h", "--help", action="help", help="Diese Hilfe anzeigen und beenden."
     )
 
-    # argparse validates the threshold here, before read_temperature_csv runs.
+    # Argument errors and help exit here, before files or logs are created.
     args = parser.parse_args(argv)
     try:
-        records = read_temperature_csv(args.path)
-        temperatures = [record["temperature_c"] for record in records]
-        result = analyze_temperatures(temperatures, threshold=args.threshold)
+        with log_run(args.log_dir) as logger:
+            with log_step(logger, "csv_import"):
+                records = read_temperature_csv(args.path)
+            with log_step(logger, "temperature_analysis"):
+                temperatures = [record["temperature_c"] for record in records]
+                result = analyze_temperatures(temperatures, threshold=args.threshold)
+    except RunLoggingError as error:
+        print(f"Fehler bei der Protokollierung: {error}", file=sys.stderr)
+        return 1
     except (OSError, ValueError) as error:
         print(f"Fehler bei der Temperaturauswertung: {error}", file=sys.stderr)
         return 1
 
-    # Build the report only after the complete calculation has succeeded.
+    # The calculation, final log event, and file close must all succeed first.
     # Plain string conversion preserves the normal number representation.
     report = "\n".join([
         "Temperaturauswertung",

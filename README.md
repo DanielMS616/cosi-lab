@@ -89,6 +89,18 @@ Aus dem Projektverzeichnis lassen sich die Beispieldaten direkt auswerten und di
 
 `--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen erst nach vollständiger Berechnung auf stdout, ohne zusätzliche Rundung. Fehler erscheinen auf stderr. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format- oder Analysefehler, `2` für ungültige Kommandozeilenargumente. Es werden keine Ergebnisdateien geschrieben.
 
+Mit `--log-dir logs` wird optional eine neue UTF-8-Datei `logs/<run_id>.jsonl` exklusiv angelegt; das Verzeichnis wird bei Bedarf erstellt. Beispiel:
+
+```bash
+.venv/bin/python cosi.py examples/temperature_sample.csv --threshold 60 --log-dir logs
+```
+
+Jede JSON-Zeile enthält ausschließlich technische Metadaten zu Lauf und Schritten (`csv_import`, `temperature_analysis`): Schema-Version, Lauf-ID, UTC-Zeitpunkt, Ereignis, Schritt, Status, Abschlussdauer und gegebenenfalls Exception-Klassenname. Laufzeiten werden mit `time.perf_counter` unabhängig von der Systemuhr gemessen. Messwerte, Dateipfade und Fehlertexte werden nicht protokolliert. Protokollierungsfehler führen zu Rückgabecode `1` ohne Erfolgsbericht; die Ausgabe erfolgt erst nach vollständiger Protokollierung und Schließen der Datei. Bei Schreibfehlern kann eine unvollständige Protokolldatei zurückbleiben. Ohne Option sowie bei Hilfe oder ungültigen Argumenten entstehen keine Protokolle. `/logs/` wird von Git ignoriert.
+
+Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginnt nach der Logdateierstellung vor `run_started` und endet vor dem Schreiben von `run_finished`. Python-Start, Argumentprüfung, Logdateierstellung, abschließendes Schließen und Terminalausgabe sind nicht enthalten.
+
+`run_finished` mit `status: success` beschreibt erfolgreiche Verarbeitung vor dem Schließen der Protokolldatei. Ein anschließender Schließfehler führt dennoch zu CLI-Rückgabecode `1`. Versuchsreihen müssen deshalb zusätzlich den Prozess-Rückgabecode erfassen.
+
 ## Dokumentation und Fortschritt
 
 - [Aktueller Aufbau als Diagramme](docs/aufbau.md)
