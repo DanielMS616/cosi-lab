@@ -1,0 +1,64 @@
+# Lokale Betriebssystem- und Editor-Dateien
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python-Umgebungen und lokale Caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Zugangsdaten und reale Infrastruktur-Konfigurationen
+.env
+.env.*
+!.env.example
+.ssh/
+.wireguard/
+*.key
+*.pem
+*.p12
+*.pfx
+*.p8
+*ed25519*
+*id_rsa*
+*.ovpn
+*.wg
+*.conf
+*.conf.bak
+wg*.conf*
+
+# Private Daten und nicht bereinigte Betriebsunterlagen
+/private/
+/secrets/
+/backups/
+/raw-logs/
+/runtime-data/
+/screenshots/
+/vpn-configs/
+*.log
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+
+# Datenträgerabbilder und Transportarchive
+*.iso
+*.img
+*.zip
+*.tar
+*.tar.gz
+
+# Freigegebene Beispiele können etwa auf .example enden.
+# Diese Regeln entfernen keine bereits versionierten Inhalte aus Git.
+# Markdown, Bilder und Commit-Metadaten müssen vor Veröffentlichung geprüft werden.
