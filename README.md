@@ -2,7 +2,7 @@
 
 Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mit öffentlicher Projektdokumentation.
 
-**Aktueller Stand · 31. Oktober 2026:** Ubuntu und ein schlüsselbasierter Fernzugriff über WireGuard sind eingerichtet und in mehreren Schritten geprüft. Eine lokale Python-Entwicklungsumgebung und ein deterministischer Rechenbaustein zur Temperaturauswertung mit Offline-Tests sind vorhanden. CSV-Verarbeitung und Agentensoftware folgen. Dieses Repository macht den Fortschritt, die Entscheidungen und die Grenzen des Aufbaus nachvollziehbar.
+**Aktueller Stand · 31. Oktober 2026:** Ubuntu und ein schlüsselbasierter Fernzugriff über WireGuard sind eingerichtet und in mehreren Schritten geprüft. Eine lokale Python-Entwicklungsumgebung, ein CSV-Importer und ein deterministischer Rechenbaustein zur Temperaturauswertung mit Offline-Tests sind vorhanden. Terminaloberfläche und Agentensoftware folgen. Dieses Repository macht den Fortschritt, die Entscheidungen und die Grenzen des Aufbaus nachvollziehbar.
 
 ## Leitfrage
 
@@ -16,7 +16,7 @@ Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mi
 
 Eine synthetische Temperaturmessreihe wird als CSV eingelesen und mit Python deterministisch ausgewertet. Ein Sprachmodell formuliert auf Grundlage geprüfter Kennzahlen einen Bericht. Eine Datei wird erst nach menschlicher Freigabe abgelegt. Ablaufsteuerung, Modellanbindung, Werkzeugaufrufe und strukturierte Ereignisprotokolle werden im eigenen Python-Kern nachvollziehbar umgesetzt.
 
-Zunächst entsteht ein fester Ablauf mit Terminal-Bedienung. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Die deterministische Auswertung einer Messwertliste ist bereits implementiert; CSV-Verarbeitung, Terminal-Bedienung, Modellanbindung, freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
+Zunächst entsteht ein fester Ablauf mit Terminal-Bedienung. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. CSV-Import und deterministische Auswertung einer Messwertliste sind bereits implementiert; Terminal-Bedienung, Modellanbindung, freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
 
 ## Bisher erreicht
 
@@ -69,6 +69,14 @@ Die zugehörigen Tests werden im Repository-Verzeichnis ausgeführt:
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 ```
+
+## CSV-Import
+
+`temperature_csv.read_temperature_csv(path)` akzeptiert einen Pfad als `str` oder `pathlib.Path`. Die Beispieldatei [examples/temperature_sample.csv](examples/temperature_sample.csv) zeigt das unterstützte Format: UTF-8, Komma als Trennzeichen, feste Kopfzeile `time_s,temperature_c`, ein Datensatz je physischer Zeile mit genau zwei Feldern und Zeilenenden LF oder CRLF.
+
+Zeitstempel müssen vorhanden, endlich und strikt aufsteigend sein. Temperaturen müssen endliche Zahlen sein; leere oder nur aus Leerraum bestehende Temperaturfelder werden als `None` erhalten. Der Importer liefert eine Liste von Wörterbüchern mit `time_s` und `temperature_c`, Zahlen jeweils als `float`. Fehlerhafte Zeilen werden mit `ValueError` samt Zeile und gegebenenfalls Feld gemeldet; Dateisystemfehler bleiben erhalten. Leere Dateien und Dateien nur mit Kopfzeile werden abgelehnt.
+
+Import und Analyse bleiben getrennt: Auch ausschließlich fehlende Temperaturen sind importierbar. Erst `analyze_temperatures` lehnt die Auswertung ohne gültige Temperaturen ab. Die Tests prüfen beide Bausteine auch gemeinsam anhand der Beispieldatei.
 
 ## Dokumentation und Fortschritt
 
