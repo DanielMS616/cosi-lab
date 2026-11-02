@@ -144,6 +144,7 @@ Die Adaptertests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte und 
 - [Journal: 2. November 2026](docs/journal/2026-11-02.md)
 - [Versuch: CLI-Basismessung mit und ohne Protokollierung](docs/versuche/2026-11-02-cli-baseline.md)
 - [Prüfplan für Modellberichte](docs/versuche/modellberichte-pruefplan.md): vier CSV-Referenzfälle mit festen Sollwerten und Kriterien für die spätere manuelle Bewertung; die Offline-Prüfung bewertet noch keine Modellqualität.
+- [Erste echte Qualitätsprüfung der Modellberichte](docs/versuche/2026-11-02-modellberichte-erste-pruefung.md): Betreiber-Rückmeldung zu vier Einzelantworten; korrekte Kennzahlen in allen Fällen, eine falsche Zusatzbehauptung.
 
 Das Journal hält abgeschlossene Schritte und Beobachtungen kurz fest. Wesentliche Entscheidungen werden mit ihrer Begründung dokumentiert. Testergebnisse werden als geprüft, auffällig oder noch offen gekennzeichnet; geplante Funktionen werden nicht als bereits umgesetzt dargestellt.
 
