@@ -96,7 +96,9 @@ Ohne `--model-report` bleibt der Aufruf vollständig offline. Nur diese Option a
 
 `--model` ist bei `--model-report` optional (Standard: `gpt-4.1-mini`). Ohne `--model-report` sowie bei leerem oder nur aus Leerraum bestehendem Modellnamen endet die Argumentprüfung mit Code `2`, bevor Verarbeitung, Netzwerkzugriff oder Protokollierung beginnen.
 
-Mit `--save-report` wird der vollständige Bericht zunächst ausdrücklich als **Vorschau** zusammen mit einem vom Programm bestimmten Ziel `reports/<UUID>.txt` gezeigt. Die Option funktioniert mit und ohne `--model-report`. Freigabe und Speicherung sind offline getestet; ein praktischer Ubuntu-Nachweis für `--save-report` steht noch aus:
+Mit `--save-report` wird der vollständige Bericht zunächst ausdrücklich als **Vorschau** zusammen mit einem vom Programm bestimmten Ziel `reports/<UUID>.txt` gezeigt. Die Option funktioniert mit und ohne `--model-report`. Freigabe und Speicherung sind offline getestet.
+
+Zum Commit `c74b996` bestätigt eine [Betreiber-Rückmeldung](docs/journal/2026-11-02.md) den Ubuntu-Praxistest ohne Modellbericht: 104 Tests erfolgreich, `nein` ohne Berichtsordner oder Datei, danach `ja` im selben Versuchsordner mit genau einer Datei entsprechend der Vorschau. Beide Aufrufe bestätigten den Protokollabschluss und endeten mit Code `0`. Die Versuchsdateien liegen außerhalb des Repositorys. Beispielaufruf:
 
 ```bash
 .venv/bin/python cosi.py examples/temperature_sample.csv --save-report --log-dir logs
