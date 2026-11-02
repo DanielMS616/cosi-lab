@@ -138,6 +138,30 @@ Nur abgeschlossene Antworten mit nichtleerem Text gelten als Erfolg. Textteile a
 
 Die Adaptertests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte und prüfen Anfrage, Antwortauswertung und Fehlerbehandlung offline. Die CLI-Integration wird mit einem festen Testgenerator geprüft. Zusätzlich liegen Betreiber-Rückmeldungen zu einem erfolgreichen manuellen Modellaufruf mit `gpt-4.1-mini` und einem erfolgreichen CLI-Live-Test mit Modellbericht und Protokollierung auf Ubuntu vor. Die Beispielkennzahlen waren korrekt; der CLI-Prozess endete mit Code `0`, alle Verarbeitungsschritte waren erfolgreich. Das ist ein erfolgreicher Einzelfall, kein allgemeiner Modellqualitäts- oder Zuverlässigkeitsnachweis. Lauf-ID und gemessene Modellschrittdauer einschließlich API-Kommunikation stehen im [Journal](docs/journal/2026-11-02.md).
 
+## Vergleichslauf der Berichtsaufträge
+
+`compare_report_prompts.py` setzt den [festgelegten Prüfplan](docs/versuche/modellberichte-pruefplan.md) um: vier Fälle, drei Wiederholungen pro Variante, insgesamt höchstens 24 Anfragen in wechselnder Reihenfolge A/B und B/A. Standardmäßig werden ausschließlich die Aufträge und der Ablauf vorbereitet, auch bei gesetztem `OPENAI_API_KEY`:
+
+```bash
+.venv/bin/python compare_report_prompts.py --output-dir ../cosi-promptvergleich-vorbereitung
+```
+
+Der Zielordner muss neu sein und außerhalb des Repositorys liegen. Für eine ausdrücklich angeforderte Live-Reihe ist ein anderer neuer Ordner und `--live` erforderlich:
+
+```bash
+.venv/bin/python compare_report_prompts.py --output-dir ../cosi-promptvergleich-live --live
+```
+
+Nur `--live` aktiviert den bestehenden Adapter mit `gpt-4.1-mini`, dessen unveränderten Parametern und Schlüsselzugang über `OPENAI_API_KEY`. Erwartete Adapterfehler werden technisch erfasst; die übrigen Versuche laufen ohne Ersatzaufrufe weiter. Speicherfehler stoppen den Lauf mit Code `1`, Strg+C mit `130`. Code `0` bedeutet erfolgreiche Vorbereitung beziehungsweise Live-Abschluss ohne Adapterfehler; inhaltliche Richtigkeit wird nicht automatisch bewertet.
+
+Der Lauf liest die A-/B-Fassungen von `temperature_report.py` mit `git show` aus den im Prüfplan benannten Commits. `ModuleType` stellt je Variante einen getrennten Namensraum bereit; `compile` und `exec` laden darin ausschließlich den festgelegten historischen Projektcode. Es erfolgen keine Checkouts und keine Änderungen an Produktionsmodulen. Referenzmanifeste und CSV-Dateien werden ebenfalls mit `git show` aus Commit `a67dc34d12d221b3d1a61b3dd97c748e2f7a6219` gelesen und über temporäre Dateien mit Importer und Analyse gegen alle Sollwerte geprüft, bevor Anfragen beginnen.
+
+Ein aufzeichnender Testgenerator erhält den Auftrag von der jeweiligen historischen Berichtsfunktion und hält ihn unverändert fest. Seine interne Platzhalterantwort wird verworfen und niemals als Modellergebnis gespeichert. Beide Varianten bekommen dieselben berechneten Fakten und denselben Schwellenwert.
+
+Im Versuchsordner enthält `plan.jsonl` 24 UTF-8-JSONL-Datensätze mit Varianten-Commits, Referenzdaten-Commit, Modell, Modus, Reihenfolge, Fall, Variante, Wiederholung und tatsächlichem Auftrag. Alle Planeinträge sind ausdrücklich `not_executed`; sie zeigen nur den vorbereiteten Ablauf. Im Live-Modus kommt `results.jsonl` hinzu: je Versuch ein `attempt_started` vor dem Aufruf und ein `attempt_finished` mit technischem Status und gegebenenfalls unveränderter Antwort danach. Jede Zeile wird sofort geschrieben und mit `flush` geleert. Schlüssel, Umgebungsvariablen und Adapterfehlertexte werden nicht gespeichert, nur der Fehlertyp.
+
+Bereits geschriebene Nachweise bleiben bei Abbruch erhalten; ein Start ohne Abschluss belegt kein erfolgreich empfangenes Ergebnis. Beschädigte oder unvollständige letzte Zeilen sind bei einem Schreibfehler möglich; `flush` garantiert keine Haltbarkeit bei Systemausfall. Vorhandene Versuchsordner werden nicht wiederverwendet. Die automatisierten Tests ersetzen historische Quellen und Modellgenerator durch Fakes; der Live-Vergleich und die manuelle Qualitätsbewertung stehen weiterhin aus.
+
 ## Dokumentation und Fortschritt
 
 - [Aktueller Aufbau als Diagramme](docs/aufbau.md)
