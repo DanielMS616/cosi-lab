@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 import cosi
+from openai_text import OpenAITextError
 from run_logging import RunLoggingError, log_run, log_step
 
 
@@ -42,6 +43,10 @@ class RunLoggingTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         self.log_dir = self.root / "logs"
         self.input_path = self.root / "input.csv"
+        # Model-enabled integration tests use a fixed answer, never a real API.
+        generator = patch("cosi.generate_text", return_value="Fester Modellbericht.")
+        self.generator = generator.start()
+        self.addCleanup(generator.stop)
 
     def run_cli(self, arguments: list[str]) -> subprocess.CompletedProcess[str]:
         """Run the actual CLI in an isolated working directory."""
@@ -260,14 +265,15 @@ class RunLoggingTests(unittest.TestCase):
         stream.close.side_effect = close_and_fail
         with patch("run_logging.open", return_value=stream, create=True):
             code, stdout, stderr = self.call_main([
-                str(SAMPLE_PATH), "--log-dir", str(self.log_dir)
+                str(SAMPLE_PATH), "--model-report", "--log-dir", str(self.log_dir)
             ])
 
         self.assertEqual(code, 1)
         self.assertEqual(stdout, "")
         self.assertIn("geschlossen", stderr)
         self.assertTrue(buffer.closed)
-        self.assertEqual(stream.write.call_count, 6)
+        self.assertEqual(stream.write.call_count, 8)
+        self.generator.assert_called_once()
 
     def test_success_report_is_printed_after_close(self) -> None:
         """Observe the output boundary to enforce completion-before-reporting."""
@@ -285,12 +291,65 @@ class RunLoggingTests(unittest.TestCase):
         with patch("run_logging.open", return_value=stream, create=True):
             with patch("cosi.print", side_effect=print_after_close, create=True):
                 code, stdout, stderr = self.call_main([
-                    str(SAMPLE_PATH), "--log-dir", str(self.log_dir)
+                    str(SAMPLE_PATH), "--model-report", "--log-dir", str(self.log_dir)
                 ])
 
         self.assertEqual(code, 0)
         self.assertIn("Messwerte insgesamt: 6", stdout)
+        self.assertIn("Modellbericht:\nFester Modellbericht.", stdout)
         self.assertEqual(stderr, "")
+        self.generator.assert_called_once()
+
+    def test_model_step_logging_failures_stop_writing_and_suppress_output(self) -> None:
+        """Write failures override report success or failure without further writes."""
+        for model_fails, failing_write in ((False, 6), (False, 7), (False, 8),
+                                          (True, 7), (True, 8)):
+            with self.subTest(model_fails=model_fails, failing_write=failing_write):
+                self.generator.reset_mock()
+                self.generator.side_effect = (
+                    OpenAITextError("Simulierter Modellfehler.") if model_fails else None
+                )
+                buffer = io.StringIO()
+                stream = MagicMock(wraps=buffer)
+
+                def write_or_fail(line: str) -> int:
+                    """Fail at model step start, completion, or final run event."""
+                    if stream.write.call_count == failing_write:
+                        raise OSError("simulated write failure")
+                    return buffer.write(line)
+
+                stream.write.side_effect = write_or_fail
+                with patch("run_logging.open", return_value=stream, create=True):
+                    code, stdout, stderr = self.call_main([
+                        str(SAMPLE_PATH), "--model-report", "--log-dir", str(self.log_dir),
+                    ])
+                self.assertEqual(code, 1)
+                self.assertEqual(stdout, "")
+                self.assertIn("Protokollierung", stderr)
+                self.assertNotIn("Traceback", stderr)
+                self.assertTrue(buffer.closed)
+                stream.close.assert_called_once()
+                self.assertEqual(stream.write.call_count, failing_write)
+                self.assertEqual(self.generator.call_count, 0 if failing_write == 6 else 1)
+
+    def test_custom_processing_exception_is_preserved(self) -> None:
+        """Logging understands arbitrary processing errors without importing a provider."""
+        class ProcessingError(Exception):
+            """Stand in for an independent component's custom exception."""
+
+        original = ProcessingError("private-error-marker")
+        with self.assertRaises(ProcessingError) as caught:
+            with log_run(self.log_dir) as logger:
+                with log_step(logger, "model_report"):
+                    raise original
+
+        self.assertIs(caught.exception, original)
+        events = self.read_events(next(self.log_dir.glob("*.jsonl")))
+        self.assertEqual(len(events), 4)
+        for event in events[-2:]:
+            self.assertEqual(event["status"], "error")
+            self.assertEqual(event["error_type"], "ProcessingError")
+        self.assertNotIn("private-error-marker", json.dumps(events))
 
     def test_duration_uses_counter_despite_wall_clock_moving_backwards(self) -> None:
         """Controlled clocks demonstrate that UTC timestamps do not set durations."""

@@ -71,6 +71,8 @@ def log_run(log_dir: str | Path | None) -> Iterator[RunLogger | None]:
     contextmanager lets the caller use a with block: code before yield opens
     the run, and code after yield handles its completion. finally always closes
     an opened file, including when writing run_started fails.
+    Record processing exceptions without provider-specific imports and re-raise
+    them unchanged. Logging failures propagate without further write attempts.
     """
     if log_dir is None:
         yield None
@@ -82,7 +84,10 @@ def log_run(log_dir: str | Path | None) -> Iterator[RunLogger | None]:
         logger.write_event("run_started", None, "started")
         try:
             yield logger
-        except (OSError, ValueError) as error:
+        except RunLoggingError:
+            raise
+        except Exception as error:
+            # Observe processing failures without handling or converting them.
             duration_ms = (time.perf_counter() - started) * 1000
             logger.write_event("run_finished", None, "error", duration_ms, type(error).__name__)
             raise
@@ -95,7 +100,7 @@ def log_run(log_dir: str | Path | None) -> Iterator[RunLogger | None]:
 
 @contextmanager
 def log_step(logger: RunLogger | None, step: str) -> Iterator[None]:
-    """Bracket a processing step, preserving its original expected exception."""
+    """Record processing failures and preserve them; never retry a logging failure."""
     if logger is None:
         yield
         return
@@ -105,7 +110,10 @@ def log_step(logger: RunLogger | None, step: str) -> Iterator[None]:
     logger.write_event("step_started", step, "started")
     try:
         yield
-    except (OSError, ValueError) as error:
+    except RunLoggingError:
+        raise
+    except Exception as error:
+        # The caller decides which exceptions it can handle; logging only records.
         duration_ms = (time.perf_counter() - started) * 1000
         logger.write_event("step_finished", step, "error", duration_ms, type(error).__name__)
         raise

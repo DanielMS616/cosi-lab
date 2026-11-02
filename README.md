@@ -2,7 +2,7 @@
 
 Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mit öffentlicher Projektdokumentation.
 
-**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Berichtsschnittstelle und OpenAI-Textadapter sind offline geprüft; echte API-Aufrufe und die CLI-Einbindung des Adapters stehen noch aus. Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Die Agentenschleife folgt.
+**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Ein optionaler Modellbericht ist über die CLI verfügbar und offline getestet. Der Betreiber hat außerdem einen erfolgreichen manuellen Live-Aufruf auf Ubuntu mit `gpt-4.1-mini` zurückgemeldet; alle Kennzahlen des Beispiels wurden korrekt wiedergegeben (siehe Journal). Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Die Agentenschleife folgt.
 
 ## Leitfrage
 
@@ -16,7 +16,7 @@ Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mi
 
 Eine synthetische Temperaturmessreihe wird als CSV eingelesen und mit Python deterministisch ausgewertet. Ein Sprachmodell formuliert auf Grundlage geprüfter Kennzahlen einen Bericht. Eine Datei wird erst nach menschlicher Freigabe abgelegt. Ablaufsteuerung, Modellanbindung, Werkzeugaufrufe und strukturierte Ereignisprotokolle werden im eigenen Python-Kern nachvollziehbar umgesetzt.
 
-Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Die Einbindung eines Modells in den Ablauf, freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
+Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Ein Modellbericht ist ausdrücklich zuschaltbar; freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
 
 ## Bisher erreicht
 
@@ -86,7 +86,15 @@ Aus dem Projektverzeichnis lassen sich die Beispieldaten direkt auswerten und di
 .venv/bin/python cosi.py --help
 ```
 
-`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen erst nach vollständiger Berechnung auf stdout, ohne zusätzliche Rundung. Fehler erscheinen auf stderr. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format- oder Analysefehler, `2` für ungültige Kommandozeilenargumente. Es werden keine Ergebnisdateien geschrieben.
+`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen ohne zusätzliche Rundung auf stdout. Bei angefordertem Modellbericht folgen sie erst nach erfolgreicher Berichtserstellung und gegebenenfalls erfolgreichem Logabschluss; danach erscheint der gekennzeichnete Modellbericht. Fehler erscheinen auf stderr, ohne Erfolgsbericht. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format-, Analyse-, Modell- oder Protokollierungsfehler, `2` für ungültige Kommandozeilenargumente. Es werden keine Ergebnisdateien geschrieben.
+
+Ohne `--model-report` bleibt der Aufruf vollständig offline. Nur diese Option aktiviert die OpenAI-Berichtserstellung und benötigt `OPENAI_API_KEY` in der Umgebung. Übermittelt werden ausschließlich Kennzahlen und derselbe validierte Schwellenwert wie bei der Analyse, keine Rohdaten oder Dateipfade. Beispiel für einen ausdrücklich angeforderten API-Aufruf:
+
+```bash
+.venv/bin/python cosi.py examples/temperature_sample.csv --threshold 60 --model-report --model gpt-4.1-mini
+```
+
+`--model` ist bei `--model-report` optional (Standard: `gpt-4.1-mini`). Ohne `--model-report` sowie bei leerem oder nur aus Leerraum bestehendem Modellnamen endet die Argumentprüfung mit Code `2`, bevor Verarbeitung, Netzwerkzugriff oder Protokollierung beginnen.
 
 Mit `--log-dir logs` wird optional eine neue UTF-8-Datei `logs/<run_id>.jsonl` exklusiv angelegt; das Verzeichnis wird bei Bedarf erstellt. Beispiel:
 
@@ -94,7 +102,7 @@ Mit `--log-dir logs` wird optional eine neue UTF-8-Datei `logs/<run_id>.jsonl` e
 .venv/bin/python cosi.py examples/temperature_sample.csv --threshold 60 --log-dir logs
 ```
 
-Jede JSON-Zeile enthält ausschließlich technische Metadaten zu Lauf und Schritten (`csv_import`, `temperature_analysis`): Schema-Version, Lauf-ID, UTC-Zeitpunkt, Ereignis, Schritt, Status, Abschlussdauer und gegebenenfalls Exception-Klassenname. Laufzeiten werden mit `time.perf_counter` unabhängig von der Systemuhr gemessen. Messwerte, Dateipfade und Fehlertexte werden nicht protokolliert. Protokollierungsfehler führen zu Rückgabecode `1` ohne Erfolgsbericht; die Ausgabe erfolgt erst nach vollständiger Protokollierung und Schließen der Datei. Bei Schreibfehlern kann eine unvollständige Protokolldatei zurückbleiben. Ohne Option sowie bei Hilfe oder ungültigen Argumenten entstehen keine Protokolle. `/logs/` wird von Git ignoriert.
+Jede JSON-Zeile enthält ausschließlich technische Metadaten zu Lauf und Schritten (`csv_import`, `temperature_analysis` und bei angefordertem Bericht `model_report`): Schema-Version, Lauf-ID, UTC-Zeitpunkt, Ereignis, Schritt, Status, Abschlussdauer und gegebenenfalls Exception-Klassenname. Laufzeiten werden mit `time.perf_counter` unabhängig von der Systemuhr gemessen. Messwerte, Dateipfade, Prompts, Modellantworten und Fehlertexte werden nicht protokolliert. Modellfehler werden mit ihrem ursprünglichen Exception-Klassennamen als fehlgeschlagener Schritt und Lauf erfasst; das Ereignisschema bleibt unverändert. Protokollierungsfehler führen zu Rückgabecode `1` ohne Erfolgsbericht; die Ausgabe erfolgt erst nach vollständiger Protokollierung und Schließen der Datei. Bei Schreibfehlern kann eine unvollständige Protokolldatei zurückbleiben. Ohne Option sowie bei Hilfe oder ungültigen Argumenten entstehen keine Protokolle. `/logs/` wird von Git ignoriert.
 
 Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginnt nach der Logdateierstellung vor `run_started` und endet vor dem Schreiben von `run_finished`. Python-Start, Argumentprüfung, Logdateierstellung, abschließendes Schließen und Terminalausgabe sind nicht enthalten.
 
@@ -104,7 +112,7 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 
 `temperature_report.generate_temperature_report(analysis_result, threshold, text_generator)` erstellt aus den sieben vorhandenen Kennzahlen und dem zugehörigen Schwellenwert einen Auftrag für einen kurzen deutschen Bericht. Rohdaten, Dateipfade und zusätzliche Wörterbucheinträge werden nicht übergeben; die Kennzahlen werden nicht neu berechnet. Der Auftrag verlangt, fehlende Werte und Werte strikt oberhalb des Schwellenwerts korrekt zu beschreiben und keine Ursachen zu erfinden.
 
-Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Der separat implementierte OpenAI-Adapter ist noch nicht in die CLI eingebunden; der vorhandene CLI-Ablauf bleibt unverändert.
+Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Die CLI verbindet diese Schnittstelle ausschließlich bei `--model-report` mit dem OpenAI-Adapter. Die berechneten Kennzahlen bleiben die verlässliche Grundlage; der Modellbericht ist nicht automatisch auf Faktentreue geprüft.
 
 ## OpenAI-Textadapter
 
@@ -112,7 +120,7 @@ Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält 
 
 Nur abgeschlossene Antworten mit nichtleerem Text gelten als Erfolg. Textteile aus den `output/content`-Einträgen werden in ihrer Reihenfolge zusammengesetzt. HTTP-, Verbindungs-, JSON- und unvollständige Antwortfehler werden als `OpenAITextError` ohne Schlüssel, Anfrage-Header oder vollständige Serverfehlertexte gemeldet. Grundlage sind die offizielle [Textanleitung](https://developers.openai.com/api/docs/guides/text) und [API-Übersicht](https://developers.openai.com/api/reference/overview).
 
-Die Tests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte. Sie prüfen Anfrage, Antwortauswertung und Fehlerbehandlung offline; echte Erreichbarkeit, Authentifizierung und Modellqualität sind damit nicht nachgewiesen. Es wurden keine echten API-Aufrufe ausgeführt.
+Die Tests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte. Sie prüfen Anfrage, Antwortauswertung und Fehlerbehandlung offline. Die CLI-Integration wird mit einem festen Testgenerator geprüft. Separat hat der Betreiber einen erfolgreichen manuellen Live-Aufruf auf Ubuntu mit `gpt-4.1-mini` zurückgemeldet: Alle Kennzahlen des Beispiels wurden korrekt wiedergegeben. Diese Einzelbeobachtung ist kein allgemeiner Modellqualitätsnachweis und kein Live-Nachweis der neuen CLI-Integration. Bei dieser Implementierung wurden keine echten API-Aufrufe ausgeführt; Laufzeiten, Tokenzahlen und Kosten wurden nicht erhoben. Details stehen im [heutigen Journal](docs/journal/2026-11-02.md).
 
 ## Dokumentation und Fortschritt
 

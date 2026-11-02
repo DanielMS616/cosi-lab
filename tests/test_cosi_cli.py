@@ -1,10 +1,17 @@
-"""Exercise the real terminal entry point with offline subprocesses."""
+"""Check the terminal entry point and model-report integration entirely offline."""
 
+import io
+import json
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
+
+import cosi
+from openai_text import OpenAITextError
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -73,6 +80,8 @@ class CosiCliTests(unittest.TestCase):
         self.assertIn("Temperaturmessungen", completed.stdout)
         self.assertIn("DATEI", completed.stdout)
         self.assertIn("--threshold", completed.stdout)
+        self.assertIn("--model-report", completed.stdout)
+        self.assertIn("--model", completed.stdout)
         self.assertIn("Standard: 60.0", completed.stdout)
         self.assertNotIn("Messwerte insgesamt:", completed.stdout)
 
@@ -177,3 +186,218 @@ class CosiCliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         self.assertEqual(completed.stdout.strip(), "import-ok")
         self.assertEqual(completed.stderr, "")
+
+
+class CosiModelReportTests(unittest.TestCase):
+    """Keep import, analysis, prompts, and logs real; replace the text generator."""
+
+    def setUp(self) -> None:
+        """Supply fixed model text and block HTTP independently as a test safeguard."""
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.sample = str(PROJECT_DIR / SAMPLE_PATH)
+        self.fixed_report = "Fester Modellbericht ohne Qualitätsnachweis."
+        generator = patch("cosi.generate_text", return_value=self.fixed_report)
+        self.generator = generator.start()
+        self.addCleanup(generator.stop)
+        http_boundary = patch(
+            "openai_text.http.client.HTTPSConnection",
+            side_effect=AssertionError("These CLI tests must never use HTTP."),
+        )
+        self.http_boundary = http_boundary.start()
+        self.addCleanup(http_boundary.stop)
+
+    def call_main(self, arguments: list[str]) -> tuple[int, str, str]:
+        """Capture CLI streams and argparse exits while allowing generator injection."""
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                code = cosi.main(arguments)
+            except SystemExit as error:
+                code = error.code
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def read_events(self, log_dir: Path) -> list[dict]:
+        """Read the one real log produced by a CLI invocation."""
+        paths = list(log_dir.glob("*.jsonl"))
+        self.assertEqual(len(paths), 1)
+        return [json.loads(line) for line in paths[0].read_text(encoding="utf-8").splitlines()]
+
+    def test_standard_call_never_calls_generator(self) -> None:
+        """The default remains offline, with or without logging."""
+        for logging in (False, True):
+            with self.subTest(logging=logging):
+                log_dir = self.root / "offline-logs"
+                arguments = [self.sample]
+                if logging:
+                    arguments += ["--log-dir", str(log_dir)]
+                code, stdout, stderr = self.call_main(arguments)
+                self.assertEqual(code, 0)
+                self.assertEqual(stderr, "")
+                self.assertIn("Messwerte insgesamt: 6", stdout)
+                self.assertNotIn("Modellbericht", stdout)
+                self.generator.assert_not_called()
+                self.http_boundary.assert_not_called()
+                if logging:
+                    self.assertEqual(len(self.read_events(log_dir)), 6)
+
+    def test_model_and_same_validated_threshold_reach_report(self) -> None:
+        """Inspect the real prompt to prove analysis and report use the same threshold."""
+        cases = [([], "gpt-4.1-mini", 60.0, 2),
+                 (["--model", "test-model", "--threshold", "65"], "test-model", 65.0, 0)]
+        for options, model, threshold, exceedances in cases:
+            with self.subTest(model=model, threshold=threshold):
+                self.generator.reset_mock()
+                code, stdout, stderr = self.call_main([self.sample, "--model-report", *options])
+                self.assertEqual(code, 0)
+                self.assertEqual(stderr, "")
+                self.generator.assert_called_once()
+                self.assertEqual(self.generator.call_args.kwargs, {"model": model})
+                prompt = self.generator.call_args.args[0]
+                facts = json.loads(prompt.split("Kennzahlen (JSON):\n", 1)[1])
+                self.assertEqual(facts, {
+                    "total_count": 6, "valid_count": 5, "missing_count": 1,
+                    "minimum": 40.0, "maximum": 65.0, "mean": 53.6,
+                    "exceedance_count": exceedances, "threshold": threshold,
+                })
+                self.assertIn(f"Schwellenwert: {threshold} °C", stdout)
+                self.assertIn(f"Werte strikt oberhalb des Schwellenwerts: {exceedances}", stdout)
+                self.assertTrue(stdout.endswith("Modellbericht:\n" + self.fixed_report + "\n"))
+                self.assertLess(stdout.index("Messwerte insgesamt:"), stdout.index("Modellbericht:"))
+                self.http_boundary.assert_not_called()
+
+    def test_invalid_model_arguments_stop_before_processing(self) -> None:
+        """Argument failures cannot read input, request a report, or create logs."""
+        cases = [
+            ["--model", "test-model"],
+            ["--model-report", "--model", ""],
+            ["--model-report", "--model", " \t"],
+            ["--model-report", "--model"],
+            ["--model-report", "--threshold", "NaN"],
+        ]
+        log_dir = self.root / "argument-logs"
+        with patch("cosi.read_temperature_csv") as importer:
+            for options in cases:
+                with self.subTest(options=options):
+                    code, stdout, stderr = self.call_main([
+                        self.sample, "--log-dir", str(log_dir), *options,
+                    ])
+                    self.assertEqual(code, 2)
+                    self.assertEqual(stdout, "")
+                    self.assertTrue(stderr.strip())
+                    self.assertNotIn("Traceback", stderr)
+                    importer.assert_not_called()
+                    self.generator.assert_not_called()
+                    self.http_boundary.assert_not_called()
+                    self.assertFalse(log_dir.exists())
+
+    def test_help_does_not_start_processing(self) -> None:
+        """Help remains successful even when report and log options are present."""
+        log_dir = self.root / "help-logs"
+        code, stdout, stderr = self.call_main([
+            "--model-report", "--log-dir", str(log_dir), "--help",
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("--model-report", stdout)
+        self.assertEqual(stderr, "")
+        self.generator.assert_not_called()
+        self.http_boundary.assert_not_called()
+        self.assertFalse(log_dir.exists())
+
+    def test_processing_errors_do_not_start_model_report(self) -> None:
+        """Import and analysis failures stop the run before the generator boundary."""
+        for name, csv in (("import", "wrong,header\n"),
+                          ("analysis", "time_s,temperature_c\n0,\n")):
+            with self.subTest(step=name):
+                path = self.root / f"{name}.csv"
+                path.write_text(csv, encoding="utf-8")
+                log_dir = self.root / name
+                code, stdout, stderr = self.call_main([
+                    str(path), "--model-report", "--log-dir", str(log_dir),
+                ])
+                self.assertEqual(code, 1)
+                self.assertEqual(stdout, "")
+                self.assertIn("Fehler", stderr)
+                self.generator.assert_not_called()
+                events = self.read_events(log_dir)
+                self.assertNotIn("model_report", [event["step"] for event in events])
+                self.assertEqual(events[-1]["status"], "error")
+
+    def test_model_error_suppresses_all_output_and_logs_original_type(self) -> None:
+        """A provider error becomes CLI code 1 and two error completion events."""
+        self.generator.side_effect = OpenAITextError("Simulierter Modellfehler.")
+        for logging in (False, True):
+            with self.subTest(logging=logging):
+                self.generator.reset_mock()
+                log_dir = self.root / "model-error"
+                arguments = [self.sample, "--model-report"]
+                if logging:
+                    arguments += ["--log-dir", str(log_dir)]
+                code, stdout, stderr = self.call_main(arguments)
+                self.assertEqual(code, 1)
+                self.assertEqual(stdout, "")
+                self.assertIn("Simulierter Modellfehler.", stderr)
+                self.assertNotIn("Traceback", stderr)
+                self.generator.assert_called_once()
+                if logging:
+                    events = self.read_events(log_dir)
+                    self.assertEqual(len(events), 8)
+                    self.assertEqual(
+                        [(event["event"], event["step"], event["status"], event["error_type"])
+                         for event in events[-3:]],
+                        [("step_started", "model_report", "started", None),
+                         ("step_finished", "model_report", "error", "OpenAITextError"),
+                         ("run_finished", None, "error", "OpenAITextError")],
+                    )
+                    self.assertNotIn("Simulierter Modellfehler", json.dumps(events))
+
+    def test_invalid_generator_response_is_report_failure(self) -> None:
+        """The existing report interface still validates text before CLI output."""
+        self.generator.return_value = " \t"
+        log_dir = self.root / "invalid-text"
+        code, stdout, stderr = self.call_main([
+            self.sample, "--model-report", "--log-dir", str(log_dir),
+        ])
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("Fehler", stderr)
+        self.generator.assert_called_once()
+        events = self.read_events(log_dir)
+        self.assertEqual(events[-2]["step"], "model_report")
+        for event in events[-2:]:
+            self.assertEqual(event["status"], "error")
+            self.assertEqual(event["error_type"], "ValueError")
+
+    def test_successful_model_report_events_preserve_schema(self) -> None:
+        """A report adds exactly one step and no prompt, model name, or generated text."""
+        log_dir = self.root / "success"
+        code, stdout, stderr = self.call_main([
+            self.sample, "--model-report", "--log-dir", str(log_dir),
+        ])
+        self.assertEqual(code, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn(self.fixed_report, stdout)
+        self.generator.assert_called_once()
+        events = self.read_events(log_dir)
+        self.assertEqual(
+            [(event["event"], event["step"], event["status"]) for event in events],
+            [("run_started", None, "started"),
+             ("step_started", "csv_import", "started"),
+             ("step_finished", "csv_import", "success"),
+             ("step_started", "temperature_analysis", "started"),
+             ("step_finished", "temperature_analysis", "success"),
+             ("step_started", "model_report", "started"),
+             ("step_finished", "model_report", "success"),
+             ("run_finished", None, "success")],
+        )
+        for event in events:
+            self.assertEqual(set(event), {
+                "schema_version", "run_id", "timestamp", "event", "step",
+                "status", "duration_ms", "error_type",
+            })
+            self.assertEqual(event["schema_version"], 1)
+            self.assertIsNone(event["error_type"])
+        self.assertEqual(len({event["run_id"] for event in events}), 1)
+        self.assertNotIn(self.fixed_report, json.dumps(events))
