@@ -1,0 +1,58 @@
+[
+  {
+    "case_id": "threshold_equal",
+    "csv_file": "threshold_equal.csv",
+    "threshold": 60,
+    "expected_result": {
+      "total_count": 3,
+      "valid_count": 3,
+      "missing_count": 0,
+      "minimum": 40,
+      "maximum": 60,
+      "mean": 50,
+      "exceedance_count": 0
+    }
+  },
+  {
+    "case_id": "mostly_missing",
+    "csv_file": "mostly_missing.csv",
+    "threshold": 60,
+    "expected_result": {
+      "total_count": 8,
+      "valid_count": 3,
+      "missing_count": 5,
+      "minimum": 40,
+      "maximum": 65,
+      "mean": 55,
+      "exceedance_count": 1
+    }
+  },
+  {
+    "case_id": "single_valid",
+    "csv_file": "single_valid.csv",
+    "threshold": 60,
+    "expected_result": {
+      "total_count": 3,
+      "valid_count": 1,
+      "missing_count": 2,
+      "minimum": 42,
+      "maximum": 42,
+      "mean": 42,
+      "exceedance_count": 0
+    }
+  },
+  {
+    "case_id": "negative_temperatures",
+    "csv_file": "negative_temperatures.csv",
+    "threshold": -5,
+    "expected_result": {
+      "total_count": 5,
+      "valid_count": 4,
+      "missing_count": 1,
+      "minimum": -15,
+      "maximum": 0,
+      "mean": -7.5,
+      "exceedance_count": 1
+    }
+  }
+]
