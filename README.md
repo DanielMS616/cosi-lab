@@ -2,7 +2,7 @@
 
 Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mit öffentlicher Projektdokumentation.
 
-**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Modellanbindung und Agentenschleife folgen.
+**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Berichtsschnittstelle und OpenAI-Textadapter sind offline geprüft; echte API-Aufrufe und die CLI-Einbindung des Adapters stehen noch aus. Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Die Agentenschleife folgt.
 
 ## Leitfrage
 
@@ -16,7 +16,7 @@ Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mi
 
 Eine synthetische Temperaturmessreihe wird als CSV eingelesen und mit Python deterministisch ausgewertet. Ein Sprachmodell formuliert auf Grundlage geprüfter Kennzahlen einen Bericht. Eine Datei wird erst nach menschlicher Freigabe abgelegt. Ablaufsteuerung, Modellanbindung, Werkzeugaufrufe und strukturierte Ereignisprotokolle werden im eigenen Python-Kern nachvollziehbar umgesetzt.
 
-Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Modellanbindung, freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
+Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Die Einbindung eines Modells in den Ablauf, freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
 
 ## Bisher erreicht
 
@@ -104,7 +104,15 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 
 `temperature_report.generate_temperature_report(analysis_result, threshold, text_generator)` erstellt aus den sieben vorhandenen Kennzahlen und dem zugehörigen Schwellenwert einen Auftrag für einen kurzen deutschen Bericht. Rohdaten, Dateipfade und zusätzliche Wörterbucheinträge werden nicht übergeben; die Kennzahlen werden nicht neu berechnet. Der Auftrag verlangt, fehlende Werte und Werte strikt oberhalb des Schwellenwerts korrekt zu beschreiben und keine Ursachen zu erfinden.
 
-Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Ein echter Modellzugang ist noch nicht implementiert; auch die Einbindung in die CLI folgt. Der vorhandene CLI-Ablauf bleibt unverändert.
+Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Der separat implementierte OpenAI-Adapter ist noch nicht in die CLI eingebunden; der vorhandene CLI-Ablauf bleibt unverändert.
+
+## OpenAI-Textadapter
+
+`openai_text.generate_text(prompt, model="gpt-4.1-mini")` liefert Text über die Responses API; `model` ist ein optionales Schlüsselwortargument. Der Adapter verwendet nur die Standardbibliothek und liest `OPENAI_API_KEY` ausschließlich beim Funktionsaufruf. Ohne Schlüssel erfolgt kein HTTP-Aufruf. Ein Aufruf sendet genau einen POST an `https://api.openai.com/v1/responses`, mit normaler TLS-Zertifikatsprüfung, `max_output_tokens=600` und `store=false`. Es gibt keine automatischen Wiederholungen oder Weiterleitungen. Der Netzwerk-Timeout von 30 Sekunden begrenzt blockierende Socket-Operationen, garantiert aber keine Gesamtlaufzeit, etwa einschließlich DNS-Auflösung und mehrerer Netzwerkoperationen.
+
+Nur abgeschlossene Antworten mit nichtleerem Text gelten als Erfolg. Textteile aus den `output/content`-Einträgen werden in ihrer Reihenfolge zusammengesetzt. HTTP-, Verbindungs-, JSON- und unvollständige Antwortfehler werden als `OpenAITextError` ohne Schlüssel, Anfrage-Header oder vollständige Serverfehlertexte gemeldet. Grundlage sind die offizielle [Textanleitung](https://developers.openai.com/api/docs/guides/text) und [API-Übersicht](https://developers.openai.com/api/reference/overview).
+
+Die Tests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte. Sie prüfen Anfrage, Antwortauswertung und Fehlerbehandlung offline; echte Erreichbarkeit, Authentifizierung und Modellqualität sind damit nicht nachgewiesen. Es wurden keine echten API-Aufrufe ausgeführt.
 
 ## Dokumentation und Fortschritt
 
