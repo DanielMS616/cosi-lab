@@ -42,6 +42,7 @@ wg*.conf*
 /backups/
 /raw-logs/
 /logs/
+/reports/
 /runtime-data/
 /screenshots/
 /vpn-configs/

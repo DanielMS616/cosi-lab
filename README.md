@@ -2,7 +2,7 @@
 
 Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mit öffentlicher Projektdokumentation.
 
-**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Ein optionaler Modellbericht ist über die CLI verfügbar und offline getestet. Zusätzlich hat der Betreiber einen erfolgreichen CLI-Live-Test auf Ubuntu mit `--model-report` und `--log-dir` zurückgemeldet: korrekte Beispielkennzahlen und Prozess-Rückgabecode `0`. Dieser Nachweis gilt für einen Einzelfall (siehe Journal). Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Die Agentenschleife folgt.
+**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung, optionale JSONL-Protokollierung und Speicherung nach Freigabe sind vorhanden. Ein optionaler Modellbericht ist über die CLI verfügbar und offline getestet. Zusätzlich hat der Betreiber einen erfolgreichen CLI-Live-Test auf Ubuntu mit `--model-report` und `--log-dir` zurückgemeldet: korrekte Beispielkennzahlen und Prozess-Rückgabecode `0`. Dieser Nachweis gilt für einen Einzelfall (siehe Journal). Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Die Agentenschleife folgt.
 
 ## Leitfrage
 
@@ -16,7 +16,7 @@ Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mi
 
 Eine synthetische Temperaturmessreihe wird als CSV eingelesen und mit Python deterministisch ausgewertet. Ein Sprachmodell formuliert auf Grundlage geprüfter Kennzahlen einen Bericht. Eine Datei wird erst nach menschlicher Freigabe abgelegt. Ablaufsteuerung, Modellanbindung, Werkzeugaufrufe und strukturierte Ereignisprotokolle werden im eigenen Python-Kern nachvollziehbar umgesetzt.
 
-Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Ein Modellbericht ist ausdrücklich zuschaltbar; freigegebene Speicherung und Agentenschleife bleiben Entwicklungsziele.
+Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist über eine einfache Terminalbedienung verfügbar. Darauf aufbauend soll eine begrenzte Agentenschleife mit demselben Werkzeugumfang verglichen werden. API-Modelle und ein kleines lokales Modell dienen dazu, Qualität, Ressourcenbedarf und Leistungsgrenzen zu untersuchen. Modellbericht und Speicherung nach ausdrücklicher Freigabe sind zuschaltbar; die Agentenschleife bleibt ein Entwicklungsziel.
 
 ## Bisher erreicht
 
@@ -86,7 +86,7 @@ Aus dem Projektverzeichnis lassen sich die Beispieldaten direkt auswerten und di
 .venv/bin/python cosi.py --help
 ```
 
-`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen ohne zusätzliche Rundung auf stdout. Bei angefordertem Modellbericht folgen sie erst nach erfolgreicher Berichtserstellung und gegebenenfalls erfolgreichem Logabschluss; danach erscheint der gekennzeichnete Modellbericht. Fehler erscheinen auf stderr, ohne Erfolgsbericht. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format-, Analyse-, Modell- oder Protokollierungsfehler, `2` für ungültige Kommandozeilenargumente. Es werden keine Ergebnisdateien geschrieben.
+`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen ohne zusätzliche Rundung auf stdout. Ohne Speicheroption erscheinen sie erst nach erfolgreicher Verarbeitung und gegebenenfalls erfolgreichem Logabschluss; ein angeforderter Modellbericht folgt gekennzeichnet danach. Fehler erscheinen auf stderr, ohne Erfolgsbericht. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format-, Analyse-, Modell-, Speicher- oder Protokollierungsfehler, `2` für ungültige Kommandozeilenargumente. Ohne `--save-report` werden keine Ergebnisdateien geschrieben und keine Freigaben abgefragt.
 
 Ohne `--model-report` bleibt der Aufruf vollständig offline. Nur diese Option aktiviert die OpenAI-Berichtserstellung und benötigt `OPENAI_API_KEY` in der Umgebung. Übermittelt werden ausschließlich Kennzahlen und derselbe validierte Schwellenwert wie bei der Analyse, keine Rohdaten oder Dateipfade. Beispiel für einen ausdrücklich angeforderten API-Aufruf:
 
@@ -96,15 +96,27 @@ Ohne `--model-report` bleibt der Aufruf vollständig offline. Nur diese Option a
 
 `--model` ist bei `--model-report` optional (Standard: `gpt-4.1-mini`). Ohne `--model-report` sowie bei leerem oder nur aus Leerraum bestehendem Modellnamen endet die Argumentprüfung mit Code `2`, bevor Verarbeitung, Netzwerkzugriff oder Protokollierung beginnen.
 
+Mit `--save-report` wird der vollständige Bericht zunächst ausdrücklich als **Vorschau** zusammen mit einem vom Programm bestimmten Ziel `reports/<UUID>.txt` gezeigt. Die Option funktioniert mit und ohne `--model-report`. Freigabe und Speicherung sind offline getestet; ein praktischer Ubuntu-Nachweis für `--save-report` steht noch aus:
+
+```bash
+.venv/bin/python cosi.py examples/temperature_sample.csv --save-report --log-dir logs
+```
+
+Nur `ja` (äußeren Leerraum entfernen, Groß-/Kleinschreibung ignorieren) erlaubt Speichern. Andere Antworten, EOF und Strg+C bei der Eingabe verweigern die Freigabe und enden regulär mit Code `0` und „Nicht gespeichert“. Erst nach Freigabe werden Berichtsordner und Datei angelegt. `report_storage.py` schreibt den bereits angezeigten Bericht exakt als UTF-8, einschließlich abschließendem Zeilenumbruch, ohne Vorschau-Markierungen oder Zielpfad. Es gibt keinen weiteren Modellaufruf. Modelltext bestimmt weder Ziel noch Freigabe; exklusive Dateierstellung verhindert Überschreiben auch bei einer UUID-Kollision. `/reports/` wird von Git ignoriert.
+
+Die Vorschau bestätigt weder Speicherung noch Logabschluss. „Bericht gespeichert“ erscheint erst nach erfolgreichem Schreiben und Schließen der Berichtdatei sowie gegebenenfalls erfolgreichem Logabschluss. Scheitert nach dem Schreibabschluss die Protokollierung, meldet die CLI mit Code `1`, dass die Berichtdatei bereits vollständig geschrieben und geschlossen wurde. Sie wird nicht zurückgerollt. Bei Schreib- oder Schließfehlern der Berichtdatei ist der Schreibabschluss unbestätigt; eine unvollständige Datei kann verbleiben. Exklusive Erstellung ist keine Garantie gegen Datenverlust bei einem Systemabsturz.
+
 Mit `--log-dir logs` wird optional eine neue UTF-8-Datei `logs/<run_id>.jsonl` exklusiv angelegt; das Verzeichnis wird bei Bedarf erstellt. Beispiel:
 
 ```bash
 .venv/bin/python cosi.py examples/temperature_sample.csv --threshold 60 --log-dir logs
 ```
 
-Jede JSON-Zeile enthält ausschließlich technische Metadaten zu Lauf und Schritten (`csv_import`, `temperature_analysis` und bei angefordertem Bericht `model_report`): Schema-Version, Lauf-ID, UTC-Zeitpunkt, Ereignis, Schritt, Status, Abschlussdauer und gegebenenfalls Exception-Klassenname. Laufzeiten werden mit `time.perf_counter` unabhängig von der Systemuhr gemessen. Messwerte, Dateipfade, Prompts, Modellantworten und Fehlertexte werden nicht protokolliert. Modellfehler werden mit ihrem ursprünglichen Exception-Klassennamen als fehlgeschlagener Schritt und Lauf erfasst; das Ereignisschema bleibt unverändert. Protokollierungsfehler führen zu Rückgabecode `1` ohne Erfolgsbericht; die Ausgabe erfolgt erst nach vollständiger Protokollierung und Schließen der Datei. Bei Schreibfehlern kann eine unvollständige Protokolldatei zurückbleiben. Ohne Option sowie bei Hilfe oder ungültigen Argumenten entstehen keine Protokolle. `/logs/` wird von Git ignoriert.
+Jede JSON-Zeile enthält ausschließlich technische Metadaten zu Lauf und Schritten (`csv_import`, `temperature_analysis` und bei angefordertem Bericht `model_report`): Schema-Version, Lauf-ID, UTC-Zeitpunkt, Ereignis, Schritt, Status, Abschlussdauer und gegebenenfalls Exception-Klassenname. Laufzeiten werden mit `time.perf_counter` unabhängig von der Systemuhr gemessen. Messwerte, Dateipfade, Prompts, Modellantworten und Fehlertexte werden nicht protokolliert. Modellfehler werden mit ihrem ursprünglichen Exception-Klassennamen als fehlgeschlagener Schritt und Lauf erfasst; das Ereignisschema bleibt unverändert. Protokollierungsfehler führen zu Rückgabecode `1` ohne abschließende Erfolgsmeldung; ohne Speicheroption erfolgt auch die Berichtsausgabe erst nach vollständiger Protokollierung und Schließen der Datei. Bei `--save-report` wurde gegebenenfalls bereits die ausdrücklich gekennzeichnete Vorschau angezeigt. Bei Schreibfehlern kann eine unvollständige Protokolldatei zurückbleiben. Ohne Option sowie bei Hilfe oder ungültigen Argumenten entstehen keine Protokolle. `/logs/` wird von Git ignoriert.
 
-Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginnt nach der Logdateierstellung vor `run_started` und endet vor dem Schreiben von `run_finished`. Python-Start, Argumentprüfung, Logdateierstellung, abschließendes Schließen und Terminalausgabe sind nicht enthalten.
+Mit `--save-report` erfassen die zusätzlichen Ereignisse `save_approved` beziehungsweise `save_declined` die Freigabeentscheidung (`step: report_save`, `status: success`, Dauer und Fehlertyp `null`). Eine Ablehnung ist kein Verarbeitungsfehler. Nur nach Freigabe folgt der Schritt `report_save` mit den bestehenden Start-/Abschlussereignissen. Eingabetext, Bericht und Zielpfad stehen nicht im Log; die gemeinsamen Felder bleiben unverändert.
+
+Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginnt nach der Logdateierstellung vor `run_started` und endet vor dem Schreiben von `run_finished`. Python-Start, Argumentprüfung, Logdateierstellung, abschließendes Schließen der Logdatei und die abschließende Terminalausgabe sind nicht enthalten. Bei `--save-report` umfasst `run_finished.duration_ms` zusätzlich Vorschau, Wartezeit auf die Freigabe und gegebenenfalls Speicherung einschließlich Schließen der Berichtdatei. Diese Laufzeit ist keine reine Verarbeitungszeit.
 
 `run_finished` mit `status: success` beschreibt erfolgreiche Verarbeitung vor dem Schließen der Protokolldatei. Ein anschließender Schließfehler führt dennoch zu CLI-Rückgabecode `1`. Versuchsreihen müssen deshalb zusätzlich den Prozess-Rückgabecode erfassen.
 
