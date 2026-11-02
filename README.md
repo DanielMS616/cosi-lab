@@ -2,7 +2,7 @@
 
 Python-Versuchssystem für kontrollierte KI-Aufträge auf begrenzter Hardware mit öffentlicher Projektdokumentation.
 
-**Aktueller Stand · 31. Oktober 2026:** Ubuntu und ein schlüsselbasierter Fernzugriff über WireGuard sind eingerichtet und in mehreren Schritten geprüft. Eine lokale Python-Entwicklungsumgebung, ein CSV-Importer, ein deterministischer Rechenbaustein und eine einfache Terminalbedienung zur Temperaturauswertung mit Offline-Tests sind vorhanden. Modellanbindung und Agentenschleife folgen. Dieses Repository macht den Fortschritt, die Entscheidungen und die Grenzen des Aufbaus nachvollziehbar.
+**Aktueller Stand · 2. November 2026:** CSV-Import, deterministische Temperaturauswertung, Terminalbedienung und optionale JSONL-Protokollierung sind vorhanden. Commit `c86a761` wurde auf Ubuntu mit Python 3.14.4 erfolgreich geprüft: 51 Tests sowie die protokollierte Beispielauswertung mit Rückgabecode 0. Auch automatische DNS-Aktualisierung nach einem echten öffentlichen IPv4-Wechsel und anschließender VPN-/SSH-Zugriff über den Handy-Hotspot sind geprüft. Grundlage sind die im [Journal](docs/journal/2026-11-02.md) festgehaltenen Rückmeldungen. Modellanbindung und Agentenschleife folgen.
 
 ## Leitfrage
 
@@ -31,7 +31,6 @@ Der feste Ablauf aus CSV-Import und deterministischer Temperaturauswertung ist �
 ## Offene Punkte
 
 - Längerer Leerlauftest und Prüfung im tatsächlichen Bibliotheks-WLAN.
-- DNS-Aktualisierung nach einem Wechsel der öffentlichen IP praktisch nachweisen.
 - Montage, Kühlung und zuverlässige Bedienung weiter klären; F1-Bestätigung beim Start bleibt erforderlich.
 - Speicherbasis weiter bewerten: Die vorhandene HDD hat keinen abgeschlossenen Langtest, die gefundene SSD auffällige Gesundheitswerte.
 - Das ausführlichere Lern-/Codeprofil ergänzen; die Arbeitsregeln sind in [AGENTS.md](AGENTS.md) festgehalten.
@@ -106,6 +105,7 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 - [Aktueller Aufbau als Diagramme](docs/aufbau.md)
 - [Runbook: täglicher Fernzugriff und Einrichtung](docs/runbooks/fernzugriff.md)
 - [Journal: 31. Oktober 2026](docs/journal/2026-10-31.md)
+- [Journal: 2. November 2026](docs/journal/2026-11-02.md)
 
 Das Journal hält abgeschlossene Schritte und Beobachtungen kurz fest. Wesentliche Entscheidungen werden mit ihrer Begründung dokumentiert. Testergebnisse werden als geprüft, auffällig oder noch offen gekennzeichnet; geplante Funktionen werden nicht als bereits umgesetzt dargestellt.
 

@@ -32,7 +32,7 @@
 
 ## 2. Zweck und dokumentierter Stand
 
-Stand: **31. Oktober 2026 – öffentliche Dokumentationsfassung**. Grundlage sind die gemeinsam durchgeführte Einrichtung und die vom Betreiber zurückgemeldeten Testergebnisse. Private Infrastrukturdetails sind durch Funktionsbeschreibungen ersetzt.
+Stand: **2. November 2026 – öffentliche Dokumentationsfassung**. Grundlage sind die gemeinsam durchgeführte Einrichtung und die vom Betreiber zurückgemeldeten Testergebnisse. Private Infrastrukturdetails sind durch Funktionsbeschreibungen ersetzt.
 
 Der Mac erreicht Cosi-Lab über einen verschlüsselten WireGuard-Tunnel und meldet sich anschließend per SSH-Schlüssel an. Der Zugang ist zunächst auf **SSH zum Lab-Rechner** begrenzt. Andere Heimnetzgeräte und der allgemeine Internetverkehr des Macs werden damit nicht automatisch über das Heimnetz geleitet.
 
@@ -116,6 +116,15 @@ Der erste Befehl soll die aktuelle öffentliche IPv4-Adresse aus dem Router-Onli
 | Rechner steht vor dem Ubuntu-Start | F1 vor Ort bestätigen; der VPN-Dienst ist erst nach dem Ubuntu-Start verfügbar |
 | Warnung über einen geänderten SSH-Hostschlüssel | Identität des Labs unabhängig prüfen; gespeicherte Hostschlüssel nicht ungeprüft entfernen |
 
+### Veralteten DNS-Eintrag diagnostizieren
+
+1. Die aktuelle öffentliche IPv4-Adresse im Router-Online-Monitor mit dem Ergebnis von `dig +short DEIN_VPN_DNSNAME A` vergleichen. Den Platzhalter nur lokal ersetzen.
+2. Bei Abweichung den letzten DynDNS-Updateversuch und dessen Ergebnis im Router prüfen. Die Update-URL anhand der [DuckDNS-Schnittstelle](https://www.duckdns.org/spec.jsp) kontrollieren: Stimmen Zielname, Zugangsdaten und die vom Router eingesetzten Parameter? Wird die aktuelle statt einer fest eingetragenen alten IPv4-Adresse übermittelt? DuckDNS meldet `OK` bei Erfolg und `KO` bei einem Fehler.
+3. Nach Korrektur einen Updateversuch auslösen und die DNS-Antwort erneut prüfen. Ist das Update erfolgreich, aber die Antwort noch alt, die Cache-Laufzeit (TTL, sichtbar mit `dig DEIN_VPN_DNSNAME A`) berücksichtigen und später erneut abfragen.
+4. Sobald DNS die aktuelle IPv4-Adresse liefert, WireGuard am Mac deaktivieren und erneut aktivieren. Über den Handy-Hotspot einen aktuellen Handshake und anschließend `ssh cosi-vpn` prüfen. Bleibt der Zugriff gestört, VPN-Dienst und Portweiterleitung getrennt prüfen.
+
+Update-URLs können Tokens enthalten. Konkrete Adressen, Tokens, Schlüssel, Router-Sitzungslinks und unbereinigte Diagnoseausgaben bleiben in der privaten Betriebsdokumentation.
+
 ## 6. Nachgewiesene Funktionen und offene Tests
 
 | Prüfung | Ergebnis / Stand |
@@ -127,7 +136,7 @@ Der erste Befehl soll die aktuelle öffentliche IPv4-Adresse aus dem Router-Onli
 | Energieeinstellung des Benutzers im Netzbetrieb | `sleep-inactive-ac-type = 'nothing'`; gespeicherter Timeout `3600` Sekunden löst dabei keine Schlafaktion aus |
 | Längerer Leerlauf ohne Desktop-Anmeldung | Noch offen; vorgeschlagener Test: etwa 70 Minuten, danach erneut verbinden |
 | Zugriff aus dem tatsächlichen Bibliotheks-WLAN | Noch offen |
-| Automatische DNS-Aktualisierung nach Wechsel der öffentlichen IP | Noch nicht praktisch nachgewiesen |
+| Automatische DNS-Aktualisierung nach Wechsel der öffentlichen IP | Am 02.11.2026 nach Anpassung der Update-URL mit echtem öffentlichen IPv4-Wechsel erfolgreich geprüft; VPN/SSH anschließend über Handy-Hotspot erfolgreich (siehe [Journal](../journal/2026-11-02.md)) |
 | Montage und Kühlung für längeren unbeaufsichtigten Betrieb | Noch gesondert zu prüfen |
 
 ## 7. Technische Referenzen
