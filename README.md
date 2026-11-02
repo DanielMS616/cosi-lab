@@ -100,12 +100,19 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 
 `run_finished` mit `status: success` beschreibt erfolgreiche Verarbeitung vor dem Schließen der Protokolldatei. Ein anschließender Schließfehler führt dennoch zu CLI-Rückgabecode `1`. Versuchsreihen müssen deshalb zusätzlich den Prozess-Rückgabecode erfassen.
 
+## Textschnittstelle für Temperaturberichte
+
+`temperature_report.generate_temperature_report(analysis_result, threshold, text_generator)` erstellt aus den sieben vorhandenen Kennzahlen und dem zugehörigen Schwellenwert einen Auftrag für einen kurzen deutschen Bericht. Rohdaten, Dateipfade und zusätzliche Wörterbucheinträge werden nicht übergeben; die Kennzahlen werden nicht neu berechnet. Der Auftrag verlangt, fehlende Werte und Werte strikt oberhalb des Schwellenwerts korrekt zu beschreiben und keine Ursachen zu erfinden.
+
+Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Ein echter Modellzugang ist noch nicht implementiert; auch die Einbindung in die CLI folgt. Der vorhandene CLI-Ablauf bleibt unverändert.
+
 ## Dokumentation und Fortschritt
 
 - [Aktueller Aufbau als Diagramme](docs/aufbau.md)
 - [Runbook: täglicher Fernzugriff und Einrichtung](docs/runbooks/fernzugriff.md)
 - [Journal: 31. Oktober 2026](docs/journal/2026-10-31.md)
 - [Journal: 2. November 2026](docs/journal/2026-11-02.md)
+- [Versuch: CLI-Basismessung mit und ohne Protokollierung](docs/versuche/2026-11-02-cli-baseline.md)
 
 Das Journal hält abgeschlossene Schritte und Beobachtungen kurz fest. Wesentliche Entscheidungen werden mit ihrer Begründung dokumentiert. Testergebnisse werden als geprüft, auffällig oder noch offen gekennzeichnet; geplante Funktionen werden nicht als bereits umgesetzt dargestellt.
 
