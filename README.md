@@ -136,6 +136,24 @@ Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält 
 
 Nur abgeschlossene Antworten mit nichtleerem Text gelten als Erfolg. Textteile aus den `output/content`-Einträgen werden in ihrer Reihenfolge zusammengesetzt. HTTP-, Verbindungs-, JSON- und unvollständige Antwortfehler werden als `OpenAITextError` ohne Schlüssel, Anfrage-Header oder vollständige Serverfehlertexte gemeldet. Grundlage sind die offizielle [Textanleitung](https://developers.openai.com/api/docs/guides/text) und [API-Übersicht](https://developers.openai.com/api/reference/overview).
 
+`OpenAITextError` ergänzt die unveränderte Meldung um `error_code` und `http_status`. Alte Aufrufe wie `OpenAITextError("Meldung")` liefern `unknown` und `None`. Die Codes sind vom Programm festgelegt:
+
+| Code | Bedeutung |
+|---|---|
+| `invalid_input` | Ungültiger Auftrag oder Modellname |
+| `configuration_error` | Fehlender oder ungültiger API-Schlüssel |
+| `http_error` | Empfangener HTTP-Status außerhalb von 200–299 |
+| `timeout` | Netzwerk-Timeout |
+| `connection_error` | Sonstiger Verbindungs-, TLS- oder HTTP-Protokollfehler |
+| `invalid_json` | Ungültiges UTF-8 oder JSON |
+| `invalid_response` | Ungültige Antwortstruktur oder gemeldeter Antwortfehler |
+| `incomplete_response` | Antwort oder Nachricht nicht abgeschlossen beziehungsweise unvollständig |
+| `empty_response` | Kein nichtleerer Ausgabetext |
+| `refusal` | Ausdrückliche Modellablehnung |
+| `unknown` | Keine festgelegte Zuordnung; auch Rückfallwert für unbekannte Codewerte |
+
+`http_status` enthält ausschließlich einen tatsächlich empfangenen numerischen HTTP-Status; ohne verfügbaren Status bleibt er `None`. Auch ein JSON-Fehler oder ein Timeout beim Lesen kann daher beispielsweise den empfangenen Status `200` tragen. Der Status allein belegt keinen erfolgreichen Textabruf.
+
 Die Adaptertests ersetzen ausschließlich die HTTP-Grenze durch Testobjekte und prüfen Anfrage, Antwortauswertung und Fehlerbehandlung offline. Die CLI-Integration wird mit einem festen Testgenerator geprüft. Zusätzlich liegen Betreiber-Rückmeldungen zu einem erfolgreichen manuellen Modellaufruf mit `gpt-4.1-mini` und einem erfolgreichen CLI-Live-Test mit Modellbericht und Protokollierung auf Ubuntu vor. Die Beispielkennzahlen waren korrekt; der CLI-Prozess endete mit Code `0`, alle Verarbeitungsschritte waren erfolgreich. Das ist ein erfolgreicher Einzelfall, kein allgemeiner Modellqualitäts- oder Zuverlässigkeitsnachweis. Lauf-ID und gemessene Modellschrittdauer einschließlich API-Kommunikation stehen im [Journal](docs/journal/2026-11-02.md).
 
 ## Vergleichslauf der Berichtsaufträge
@@ -158,7 +176,9 @@ Der Lauf liest die A-/B-Fassungen von `temperature_report.py` mit `git show` aus
 
 Ein aufzeichnender Testgenerator erhält den Auftrag von der jeweiligen historischen Berichtsfunktion und hält ihn unverändert fest. Seine interne Platzhalterantwort wird verworfen und niemals als Modellergebnis gespeichert. Beide Varianten bekommen dieselben berechneten Fakten und denselben Schwellenwert.
 
-Im Versuchsordner enthält `plan.jsonl` 24 UTF-8-JSONL-Datensätze mit Varianten-Commits, Referenzdaten-Commit, Modell, Modus, Reihenfolge, Fall, Variante, Wiederholung und tatsächlichem Auftrag. Alle Planeinträge sind ausdrücklich `not_executed`; sie zeigen nur den vorbereiteten Ablauf. Im Live-Modus kommt `results.jsonl` hinzu: je Versuch ein `attempt_started` vor dem Aufruf und ein `attempt_finished` mit technischem Status und gegebenenfalls unveränderter Antwort danach. Jede Zeile wird sofort geschrieben und mit `flush` geleert. Schlüssel, Umgebungsvariablen und Adapterfehlertexte werden nicht gespeichert, nur der Fehlertyp.
+Im Versuchsordner enthält `plan.jsonl` 24 UTF-8-JSONL-Datensätze mit Varianten-Commits, Referenzdaten-Commit, Modell, Modus, Reihenfolge, Fall, Variante, Wiederholung und tatsächlichem Auftrag. Alle Planeinträge sind ausdrücklich `not_executed`; sie zeigen nur den vorbereiteten Ablauf. Im Live-Modus kommt `results.jsonl` hinzu: je Versuch ein `attempt_started` vor dem Aufruf und ein `attempt_finished` mit technischem Status und gegebenenfalls unveränderter Antwort danach. Jede Zeile wird sofort geschrieben und mit `flush` geleert. Schlüssel, Umgebungsvariablen, Anfrage-Header, Exception-Meldungen und Serverfehlertexte werden nicht gespeichert; die Fehlerdiagnose besteht aus Fehlertyp und den festgelegten Diagnosefeldern.
+
+Neu erzeugte Vergleichsprotokolle verwenden `schema_version: 2` und ergänzen `error_code` sowie `http_status`. Bei Vorbereitung, Beginn und Erfolg sind beide Felder `null`; bei Adapterfehlern werden sie aus `OpenAITextError` übernommen. Vorhandene Protokolle werden nicht verändert. Die Ursachen der neun früheren Ausfälle bleiben ausdrücklich unbekannt: Die neuen Diagnosefelder liefern keinen nachträglichen Ursachennachweis.
 
 Bereits geschriebene Nachweise bleiben bei Abbruch erhalten; ein Start ohne Abschluss belegt kein erfolgreich empfangenes Ergebnis. Beschädigte oder unvollständige letzte Zeilen sind bei einem Schreibfehler möglich; `flush` garantiert keine Haltbarkeit bei Systemausfall. Vorhandene Versuchsordner werden nicht wiederverwendet. Die automatisierten Tests ersetzen historische Quellen und Modellgenerator durch Fakes. Der Betreiber hat den Live-Vergleich ausgeführt; die anschließende manuelle Durchsicht ergab bei 15 gespeicherten Antworten korrekte und vollständige Kennzahlen sowie eine falsche Zusatzbehauptung. Neun Adapterfehler schränken die Auswertung ein; Details stehen in der [Ergebnisnotiz](docs/versuche/2026-11-02-promptvergleich-ab.md).
 

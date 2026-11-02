@@ -57,6 +57,21 @@ class OpenAITextTests(unittest.TestCase):
         self.connection.request.assert_called_once()
         self.connection.close.assert_called_once()
 
+    def assert_diagnosis(self, error: OpenAITextError, code: str, status: int | None = 200) -> None:
+        """Check stable metadata separately from the existing readable error message."""
+        self.assertEqual(error.error_code, code)
+        self.assertEqual(error.http_status, status)
+
+    def test_legacy_exception_call_and_fixed_diagnostic_values(self) -> None:
+        """Old construction retains its message; arbitrary code text is not accepted."""
+        error = OpenAITextError("Fehlermeldung")
+        self.assertEqual(str(error), "Fehlermeldung")
+        self.assertEqual(error.args, ("Fehlermeldung",))
+        self.assert_diagnosis(error, "unknown", None)
+        error = OpenAITextError("Fehlermeldung", error_code="private-code-marker",
+                                http_status="private-status-marker")
+        self.assert_diagnosis(error, "unknown", None)
+
     def test_default_request_and_completed_text(self) -> None:
         """Check endpoint, credentials, JSON options, timeout, TLS, and cleanup."""
         response = self.provide_response(self.completed_response)
@@ -110,18 +125,21 @@ class OpenAITextTests(unittest.TestCase):
                     os.environ.pop("OPENAI_API_KEY", None)
                 else:
                     os.environ["OPENAI_API_KEY"] = key
-                with self.assertRaises(OpenAITextError):
+                with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
+                self.assert_diagnosis(caught.exception, "configuration_error", None)
                 self.connection_factory.assert_not_called()
 
     def test_invalid_prompt_or_model_prevents_http(self) -> None:
         """Type annotations do not replace validation at the public boundary."""
         for value in (None, 42, "", " \n"):
             with self.subTest(value=value):
-                with self.assertRaises(OpenAITextError):
+                with self.assertRaises(OpenAITextError) as caught:
                     generate_text(value)
-                with self.assertRaises(OpenAITextError):
+                self.assert_diagnosis(caught.exception, "invalid_input", None)
+                with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht", model=value)
+                self.assert_diagnosis(caught.exception, "invalid_input", None)
                 self.connection_factory.assert_not_called()
 
     def test_collects_text_after_other_outputs_in_order(self) -> None:
@@ -152,6 +170,7 @@ class OpenAITextTests(unittest.TestCase):
             generate_text("Bericht")
 
         self.assertNotIn("private-refusal-marker", str(caught.exception))
+        self.assert_diagnosis(caught.exception, "refusal")
         self.assert_single_request_closed()
         self.connection.getresponse.assert_called_once()
         self.assertTrue(response.closed)
@@ -182,6 +201,7 @@ class OpenAITextTests(unittest.TestCase):
                     generate_text("Bericht")
 
                 self.assertNotIn("private-refusal-marker", str(caught.exception))
+                self.assert_diagnosis(caught.exception, "refusal")
                 self.assert_single_request_closed()
                 self.connection.getresponse.assert_called_once()
                 self.assertTrue(response.closed)
@@ -195,6 +215,7 @@ class OpenAITextTests(unittest.TestCase):
                 with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
                 self.assertIn(str(status), str(caught.exception))
+                self.assert_diagnosis(caught.exception, "http_error", status)
                 self.assertNotIn("private-server-marker", str(caught.exception))
                 self.assertNotIn("test-only-key", str(caught.exception))
                 self.assert_single_request_closed()
@@ -206,8 +227,9 @@ class OpenAITextTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 self.connection_factory.reset_mock(side_effect=True)
                 getattr(self.connection, operation).side_effect = TimeoutError("private-marker")
-                with self.assertRaisesRegex(OpenAITextError, "Zeitüberschreitung"):
+                with self.assertRaisesRegex(OpenAITextError, "Zeitüberschreitung") as caught:
                     generate_text("Bericht")
+                self.assert_diagnosis(caught.exception, "timeout", None)
                 self.assert_single_request_closed()
 
     def test_timeout_while_reading_closes_response_and_connection(self) -> None:
@@ -215,8 +237,9 @@ class OpenAITextTests(unittest.TestCase):
         response = self.provide_response(self.completed_response)
         # This replaces only reading from the fake HTTP response, not JSON parsing.
         with patch.object(response, "read", side_effect=TimeoutError("private-marker")):
-            with self.assertRaisesRegex(OpenAITextError, "Zeitüberschreitung"):
+            with self.assertRaisesRegex(OpenAITextError, "Zeitüberschreitung") as caught:
                 generate_text("Bericht")
+        self.assert_diagnosis(caught.exception, "timeout")
         self.assertTrue(response.closed)
         self.assert_single_request_closed()
 
@@ -234,6 +257,7 @@ class OpenAITextTests(unittest.TestCase):
                 with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
                 rendered = "".join(traceback.format_exception(caught.exception))
+                self.assert_diagnosis(caught.exception, "connection_error", None)
                 for marker in ("private-marker", "test-only-key", "Authorization"):
                     self.assertNotIn(marker, rendered)
                 self.assert_single_request_closed()
@@ -242,11 +266,14 @@ class OpenAITextTests(unittest.TestCase):
         """Malformed JSON and Python-only numeric constants are not API success."""
         for body in (b"", b"not-json private-marker", b"{", b"\xff", b'{"x": NaN}'):
             with self.subTest(body=body):
-                response = FakeHTTPResponse(body)
+                self.connection_factory.reset_mock()
+                response = FakeHTTPResponse(body, status=201)
                 self.connection.getresponse.return_value = response
                 with self.assertRaisesRegex(OpenAITextError, "JSON") as caught:
                     generate_text("Bericht")
                 self.assertNotIn("private-marker", str(caught.exception))
+                self.assert_diagnosis(caught.exception, "invalid_json", 201)
+                self.assert_single_request_closed()
                 self.assertTrue(response.closed)
 
     def test_only_completed_status_succeeds(self) -> None:
@@ -256,8 +283,9 @@ class OpenAITextTests(unittest.TestCase):
                 payload = copy.deepcopy(self.completed_response)
                 payload["status"] = status
                 self.provide_response(payload)
-                with self.assertRaisesRegex(OpenAITextError, "abgeschlossen"):
+                with self.assertRaisesRegex(OpenAITextError, "abgeschlossen") as caught:
                     generate_text("Bericht")
+                self.assert_diagnosis(caught.exception, "incomplete_response")
 
     def test_error_and_truncation_details_are_rejected(self) -> None:
         """Even contradictory completed responses cannot hide truncation or errors."""
@@ -272,6 +300,8 @@ class OpenAITextTests(unittest.TestCase):
                 with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
                 self.assertNotIn("private-server-marker", str(caught.exception))
+                expected_code = "incomplete_response" if field == "incomplete_details" else "invalid_response"
+                self.assert_diagnosis(caught.exception, expected_code)
 
     def test_missing_or_blank_text_is_rejected(self) -> None:
         """No top-level shortcut can substitute for nonblank output text."""
@@ -283,23 +313,28 @@ class OpenAITextTests(unittest.TestCase):
                 payload["output"][0]["content"] = content
                 payload["output_text"] = "Do not use this shortcut."
                 self.provide_response(payload)
-                with self.assertRaises(OpenAITextError):
+                with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
+                self.assert_diagnosis(caught.exception, "empty_response")
 
     def test_malformed_response_shapes_are_rejected(self) -> None:
         """Malformed objects fail with the adapter's error rather than TypeError."""
-        invalid_payloads = [None, [], "text", {}, {"status": "completed"}]
-        for output in (None, {}, [], [None],
-                       [{"type": "message", "content": None}],
-                       [{"type": "message", "content": [None]}],
-                       [{"type": "message", "content": [{"type": "output_text", "text": 7}]}],
-                       [{"type": "message", "status": "incomplete", "content": []}]):
-            invalid_payloads.append({"status": "completed", "output": output})
-        for payload in invalid_payloads:
+        invalid_payloads = [(None, "invalid_response"), ([], "invalid_response"),
+                            ("text", "invalid_response"), ({}, "incomplete_response"),
+                            ({"status": "completed"}, "invalid_response")]
+        for output, expected_code in ((None, "invalid_response"), ({}, "invalid_response"),
+                       ([], "empty_response"), ([None], "invalid_response"),
+                       ([{"type": "message", "content": None}], "invalid_response"),
+                       ([{"type": "message", "content": [None]}], "invalid_response"),
+                       ([{"type": "message", "content": [{"type": "output_text", "text": 7}]}], "invalid_response"),
+                       ([{"type": "message", "status": "incomplete", "content": []}], "incomplete_response")):
+            invalid_payloads.append(({"status": "completed", "output": output}, expected_code))
+        for payload, expected_code in invalid_payloads:
             with self.subTest(payload=payload):
                 self.provide_response(payload)
-                with self.assertRaises(OpenAITextError):
+                with self.assertRaises(OpenAITextError) as caught:
                     generate_text("Bericht")
+                self.assert_diagnosis(caught.exception, expected_code)
 
 
 if __name__ == "__main__":

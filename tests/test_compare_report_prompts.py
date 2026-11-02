@@ -106,12 +106,15 @@ class CompareReportPromptsTests(unittest.TestCase):
         self.assertEqual([(r["case_id"], r["variant"], r["repetition"]) for r in records], expected)
         self.assertEqual([r["order"] for r in records], list(range(1, 25)))
         for record in records:
+            self.assertEqual(record["schema_version"], 2)
             self.assertEqual(record["variant_commits"], comparison.VARIANT_COMMITS)
             self.assertEqual(record["reference_commit"], comparison.REFERENCE_COMMIT)
             self.assertEqual(record["model"], "gpt-4.1-mini")
             self.assertEqual(record["technical_status"], "not_executed")
             self.assertEqual(record["mode"], "prepare")
             self.assertIsNone(record["response"])
+            self.assertIsNone(record["error_code"])
+            self.assertIsNone(record["http_status"])
         self.adapter.assert_not_called()
 
     def test_historical_functions_receive_identical_facts_and_preserve_prompts(self) -> None:
@@ -162,6 +165,10 @@ class CompareReportPromptsTests(unittest.TestCase):
         records = self.records("results.jsonl")
         plan = self.records("plan.jsonl")
         self.assertEqual(len(records), 48)
+        for record in records:
+            self.assertEqual(record["schema_version"], 2)
+            self.assertIsNone(record["error_code"])
+            self.assertIsNone(record["http_status"])
         self.assertEqual([r["response"] for r in records[1::2]], responses)
         for index, record in enumerate(records[1::2]):
             self.assertEqual(record["prompt"], plan[index]["prompt"])
@@ -171,20 +178,36 @@ class CompareReportPromptsTests(unittest.TestCase):
         self.adapter.assert_not_called()
 
     def test_adapter_errors_continue_without_replacement_or_message_leaks(self) -> None:
-        """Two failures occupy their scheduled slots; later attempts still run once."""
-        generator = Mock(side_effect=[OpenAITextError("private-error-marker") if i in (1, 9)
-                                      else f"response-{i}" for i in range(24)])
-        self.assertEqual(comparison.run_comparison(self.output, live=True, text_generator=generator), 2)
+        """Failures with structured or legacy diagnostics occupy their slots without retries."""
+        errors = {
+            1: OpenAITextError("private-error-marker Authorization test-secret-marker",
+                               error_code="http_error", http_status=429),
+            9: OpenAITextError("private-error-marker", error_code="timeout"),
+            15: OpenAITextError("legacy-error-marker"),
+        }
+        generator = Mock(side_effect=[errors.get(i, f"response-{i}") for i in range(24)])
+        self.assertEqual(comparison.run_comparison(self.output, live=True, text_generator=generator), 3)
         results = self.records("results.jsonl")[1::2]
         plan = self.records("plan.jsonl")
         self.assertEqual(generator.call_count, 24)
         self.assertEqual([call.args[0] for call in generator.call_args_list], [r["prompt"] for r in plan])
-        self.assertEqual([r["order"] for r in results if r["technical_status"] == "error"], [2, 10])
-        for record in (results[1], results[9]):
+        self.assertEqual([r["order"] for r in results if r["technical_status"] == "error"], [2, 10, 16])
+        for index, code, status in ((1, "http_error", 429), (9, "timeout", None), (15, "unknown", None)):
+            record = results[index]
             self.assertEqual(record["error_type"], "OpenAITextError")
+            self.assertEqual(record["error_code"], code)
+            self.assertEqual(record["http_status"], status)
             self.assertIsNone(record["response"])
+        for record in self.records("results.jsonl"):
+            self.assertEqual(record["schema_version"], 2)
+            if record["technical_status"] != "error":
+                self.assertIsNone(record["error_code"])
+                self.assertIsNone(record["http_status"])
         self.assertEqual(results[-1]["response"], "response-23")
-        self.assertNotIn("private-error-marker", (self.output / "results.jsonl").read_text())
+        for filename in ("plan.jsonl", "results.jsonl"):
+            content = (self.output / filename).read_text()
+            for marker in ("private-error-marker", "legacy-error-marker", "Authorization", "test-secret-marker"):
+                self.assertNotIn(marker, content)
 
     def test_cli_live_uses_existing_adapter_and_failure_exit_code(self) -> None:
         """Patch the adapter name rather than requiring credentials or a server."""

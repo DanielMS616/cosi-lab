@@ -121,7 +121,7 @@ def prepare_attempts(live: bool) -> list[dict]:
             variants = ("A", "B") if pair % 2 else ("B", "A")
             for variant in variants:
                 attempts.append({
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "variant_commits": dict(VARIANT_COMMITS),
                     "reference_commit": REFERENCE_COMMIT,
                     "model": MODEL,
@@ -135,6 +135,8 @@ def prepare_attempts(live: bool) -> list[dict]:
                     "technical_status": "not_executed",
                     "response": None,
                     "error_type": None,
+                    "error_code": None,
+                    "http_status": None,
                 })
     return attempts
 
@@ -177,7 +179,8 @@ def run_comparison(output_dir: Path, live: bool = False, text_generator=None) ->
             except OpenAITextError as error:
                 failures += 1
                 result = {**attempt, "event": "attempt_finished",
-                          "technical_status": "error", "error_type": type(error).__name__}
+                          "technical_status": "error", "error_type": type(error).__name__,
+                          "error_code": error.error_code, "http_status": error.http_status}
             else:
                 result = {**attempt, "event": "attempt_finished",
                           "technical_status": "success", "response": response}
