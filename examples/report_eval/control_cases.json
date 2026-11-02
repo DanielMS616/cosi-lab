@@ -1,0 +1,30 @@
+[
+  {
+    "case_id": "all_above",
+    "csv_file": "all_above.csv",
+    "threshold": 10,
+    "expected_result": {
+      "total_count": 4,
+      "valid_count": 3,
+      "missing_count": 1,
+      "minimum": 12,
+      "maximum": 24,
+      "mean": 18,
+      "exceedance_count": 3
+    }
+  },
+  {
+    "case_id": "repeated_threshold",
+    "csv_file": "repeated_threshold.csv",
+    "threshold": 20,
+    "expected_result": {
+      "total_count": 6,
+      "valid_count": 5,
+      "missing_count": 1,
+      "minimum": 10,
+      "maximum": 40,
+      "mean": 24,
+      "exceedance_count": 2
+    }
+  }
+]
