@@ -126,6 +126,8 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 
 `temperature_report.generate_temperature_report(analysis_result, threshold, text_generator)` erstellt aus den sieben vorhandenen Kennzahlen und dem zugehörigen Schwellenwert einen Auftrag für einen kurzen deutschen Bericht. Rohdaten, Dateipfade und zusätzliche Wörterbucheinträge werden nicht übergeben; die Kennzahlen werden nicht neu berechnet. Der Auftrag verlangt, fehlende Werte und Werte strikt oberhalb des Schwellenwerts korrekt zu beschreiben und keine Ursachen zu erfinden.
 
+Aufgrund der [ersten Qualitätsprüfung](docs/versuche/2026-11-02-modellberichte-erste-pruefung.md) wurde der Berichtsauftrag präzisiert: alle sieben Kennzahlen und den Schwellenwert wiedergeben und keine zusätzlichen Aussagen über einzelne Temperaturen, deren Häufigkeit oder das Vorkommen von Werten genau am Schwellenwert ableiten. Ob diese Änderung die Modellqualität verbessert, ist noch nicht geprüft.
+
 Der übergebene Textgenerator ist eine Funktion, die einen Auftragstext erhält und eine Textantwort liefert. Sie wird genau einmal aufgerufen. Nicht-textuelle oder leere Antworten (auch reiner Leerraum) führen zu `ValueError`; Generatorausnahmen werden unverändert weitergereicht. Die Schnittstelle ist mit festen Testantworten offline geprüft; diese Tests bewerten keine Modellqualität oder Faktentreue. Die Antwort wird inhaltlich nicht geprüft. Die CLI verbindet diese Schnittstelle ausschließlich bei `--model-report` mit dem OpenAI-Adapter. Die berechneten Kennzahlen bleiben die verlässliche Grundlage; der Modellbericht ist nicht automatisch auf Faktentreue geprüft.
 
 ## OpenAI-Textadapter
