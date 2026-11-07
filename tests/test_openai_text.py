@@ -8,9 +8,10 @@ import os
 import ssl
 import traceback
 import unittest
+from http.client import HTTPMessage
 from unittest.mock import patch
 
-from openai_text import OpenAITextError, generate_text
+from openai_text import OpenAITextError, OpenAITextResult, generate_text, generate_text_result
 
 
 class FakeHTTPResponse(io.BytesIO):
@@ -19,6 +20,11 @@ class FakeHTTPResponse(io.BytesIO):
     def __init__(self, body: bytes, status: int = 200) -> None:
         super().__init__(body)
         self.status = status
+        self.headers = HTTPMessage()
+
+    def getheader(self, name: str) -> object:
+        """Match case-insensitive HTTP header lookup, including absent headers."""
+        return self.headers.get(name)
 
 
 class OpenAITextTests(unittest.TestCase):
@@ -78,6 +84,7 @@ class OpenAITextTests(unittest.TestCase):
 
         result = generate_text("Erkläre die Temperatur in °C.")
 
+        self.assertIsInstance(result, str)
         self.assertEqual(result, "Temperatur: 53,6 °C.")
         self.assert_single_request_closed()
         self.connection.getresponse.assert_called_once()
@@ -105,6 +112,112 @@ class OpenAITextTests(unittest.TestCase):
         payload = json.loads(self.connection.request.call_args.kwargs["body"])
         self.assertEqual(payload["model"], "test-model")
         self.assert_single_request_closed()
+
+    def test_result_contains_complete_metadata_from_one_request(self) -> None:
+        """Distinct body/header IDs and a fixed clock prove mapping and milliseconds."""
+        payload = copy.deepcopy(self.completed_response)
+        payload.update({
+            "id": "resp_test", "model": "test-model-snapshot",
+            "usage": {"input_tokens": 20, "output_tokens": 7, "total_tokens": 27},
+        })
+        response = self.provide_response(payload)
+        response.headers["X-Request-ID"] = "req_test"
+        # The server's duration is deliberately different from the local clock.
+        response.headers["openai-processing-ms"] = "999"
+        with patch("openai_text.time.perf_counter", side_effect=[10.0, 10.125]):
+            result = generate_text_result("Bericht", model="test-model")
+
+        self.assertIsInstance(result, OpenAITextResult)
+        self.assertEqual(result, OpenAITextResult(
+            text="Temperatur: 53,6 °C.", requested_model="test-model",
+            returned_model="test-model-snapshot", response_id="resp_test",
+            request_id="req_test", input_tokens=20, output_tokens=7,
+            total_tokens=27, duration_ms=125.0,
+        ))
+        payload_sent = json.loads(self.connection.request.call_args.kwargs["body"])
+        self.assertEqual(payload_sent["model"], "test-model")
+        self.assert_single_request_closed()
+        self.connection.getresponse.assert_called_once()
+        self.assertTrue(response.closed)
+
+    def test_missing_metadata_keeps_text_usable(self) -> None:
+        """A completed text needs no usage, IDs or returned model to succeed."""
+        self.provide_response(self.completed_response)
+        result = generate_text_result("Bericht")
+        self.assertEqual(result.text, "Temperatur: 53,6 °C.")
+        self.assertEqual(result.requested_model, "gpt-4.1-mini")
+        for field in ("returned_model", "response_id", "request_id",
+                      "input_tokens", "output_tokens", "total_tokens"):
+            self.assertIsNone(getattr(result, field), field)
+        self.assertGreaterEqual(result.duration_ms, 0)
+        self.assert_single_request_closed()
+
+    def test_invalid_string_metadata_is_ignored_independently(self) -> None:
+        """Bad metadata does not discard text or valid neighboring metadata."""
+        for field in ("model", "id", "x-request-id"):
+            for invalid in (None, "", " \t", 12, True, [], {}):
+                with self.subTest(field=field, invalid=invalid):
+                    self.connection_factory.reset_mock()
+                    payload = copy.deepcopy(self.completed_response)
+                    payload.update({"model": "returned-model", "id": "resp_test"})
+                    if field != "x-request-id":
+                        payload[field] = invalid
+                    response = self.provide_response(payload)
+                    response.headers["x-request-id"] = invalid if field == "x-request-id" else "req_test"
+                    result = generate_text_result("Bericht")
+                    self.assertEqual(result.text, "Temperatur: 53,6 °C.")
+                    self.assertEqual(result.returned_model, None if field == "model" else "returned-model")
+                    self.assertEqual(result.response_id, None if field == "id" else "resp_test")
+                    self.assertEqual(result.request_id, None if field == "x-request-id" else "req_test")
+                    self.assert_single_request_closed()
+
+    def test_invalid_or_partial_usage_keeps_valid_counts(self) -> None:
+        """Zero is valid; invalid counts stay None without inferring a total."""
+        usage_cases = [
+            (None, (None, None, None)), ([], (None, None, None)),
+            ("invalid", (None, None, None)), (12, (None, None, None)),
+            (True, (None, None, None)), ({}, (None, None, None)),
+            ({"input_tokens": 0}, (0, None, None)),
+            ({"input_tokens": 2, "output_tokens": 3}, (2, 3, None)),
+            ({"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}, (0, 0, 0)),
+        ]
+        for field in ("input_tokens", "output_tokens", "total_tokens"):
+            for invalid in (None, -1, True, False, 1.5, 2.0, "3", [], {}):
+                usage = {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5}
+                usage[field] = invalid
+                expected = tuple(None if name == field else usage[name]
+                                 for name in ("input_tokens", "output_tokens", "total_tokens"))
+                usage_cases.append((usage, expected))
+        for usage, expected in usage_cases:
+            with self.subTest(usage=usage):
+                self.connection_factory.reset_mock()
+                payload = copy.deepcopy(self.completed_response)
+                payload["usage"] = usage
+                self.provide_response(payload)
+                result = generate_text_result("Bericht")
+                self.assertEqual(result.text, "Temperatur: 53,6 °C.")
+                self.assertEqual((result.input_tokens, result.output_tokens, result.total_tokens), expected)
+                self.assert_single_request_closed()
+
+    def test_both_entry_points_keep_identical_error_diagnosis(self) -> None:
+        """The result interface and legacy wrapper expose the same failure details."""
+        cases = (
+            (b"{}", 429, "http_error"),
+            (b"not-json", 200, "invalid_json"),
+            (b'{"status": "incomplete"}', 200, "incomplete_response"),
+        )
+        for body, status, code in cases:
+            errors = []
+            for generate in (generate_text_result, generate_text):
+                with self.subTest(entry_point=generate.__name__, code=code):
+                    self.connection_factory.reset_mock()
+                    self.connection.getresponse.return_value = FakeHTTPResponse(body, status)
+                    with self.assertRaises(OpenAITextError) as caught:
+                        generate("Bericht")
+                    self.assert_diagnosis(caught.exception, code, status)
+                    errors.append(str(caught.exception))
+                    self.assert_single_request_closed()
+            self.assertEqual(errors[0], errors[1])
 
     def test_reads_key_on_each_call(self) -> None:
         """Environment changes after import take effect on the next invocation."""

@@ -4,7 +4,29 @@ import http.client
 import json
 import os
 import ssl
+import time
 from contextlib import closing
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class OpenAITextResult:
+    """Keep usable text and independently validated metadata from one request.
+
+    A dataclass supplies named fields and an initializer without hand-written
+    boilerplate. frozen=True prevents accidental changes to a received result.
+    None means metadata was absent or invalid, not that its value was zero.
+    """
+
+    text: str
+    requested_model: str
+    returned_model: str | None
+    response_id: str | None
+    request_id: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    duration_ms: float
 
 
 class OpenAITextError(Exception):
@@ -39,8 +61,8 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError("Invalid JSON constant.")
 
 
-def _extract_text(body: bytes, *, http_status: int | None = None) -> str:
-    """Join completed text or classify failure, retaining only a received HTTP status."""
+def _parse_response(body: bytes, *, http_status: int | None = None) -> dict[str, object]:
+    """Decode the body once so text and metadata use the same JSON object."""
     try:
         response = json.loads(body.decode("utf-8"), parse_constant=_reject_json_constant)
     except (UnicodeDecodeError, ValueError):
@@ -54,6 +76,11 @@ def _extract_text(body: bytes, *, http_status: int | None = None) -> str:
             "Die API-Antwort hat ein ungültiges Format.",
             error_code="invalid_response", http_status=http_status
         )
+    return response
+
+
+def _extract_text(response: dict[str, object], *, http_status: int | None = None) -> str:
+    """Join completed text or classify failure, retaining only a received HTTP status."""
     if response.get("status") != "completed":
         raise OpenAITextError(
             "Die API-Antwort ist nicht vollständig abgeschlossen.",
@@ -124,8 +151,22 @@ def _extract_text(body: bytes, *, http_status: int | None = None) -> str:
     return result
 
 
-def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
-    """Send one prompt and return completed output text, or raise OpenAITextError.
+def _optional_text(value: object) -> str | None:
+    """Retain nonblank strings unchanged; ignore other optional metadata."""
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _optional_token_count(value: object) -> int | None:
+    """Accept nonnegative integers, excluding bool (an int subclass in Python)."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def generate_text_result(prompt: str, *, model: str = "gpt-4.1-mini") -> OpenAITextResult:
+    """Send one prompt and return text with metadata, or raise OpenAITextError.
 
     Read OPENAI_API_KEY only when called. Use one HTTPS POST with normal TLS
     verification, no retries and no redirects. The 30-second network timeout
@@ -135,6 +176,10 @@ def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
     Errors deliberately omit server bodies and underlying exception messages.
     Each error carries a fixed code and the received HTTP status, if available.
     Returned text is not checked for factual correctness.
+    Optional metadata never substitutes for text validation. Invalid fields stay
+    None independently; token totals are neither inferred nor recalculated.
+    duration_ms measures local HTTP setup, request, reading and resource closing
+    with a monotonic clock, excluding input validation and JSON/text processing.
     """
     if not isinstance(prompt, str) or not prompt.strip():
         raise OpenAITextError("Der Auftrag muss ein nichtleerer Text sein.", error_code="invalid_input")
@@ -161,6 +206,7 @@ def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
     }
 
     http_status = None
+    started_at = time.perf_counter()
     try:
         # HTTPSConnection does not follow redirects or retry requests. The default
         # SSL context verifies both the certificate chain and the server hostname.
@@ -179,6 +225,7 @@ def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
                         error_code="http_error", http_status=http_status,
                     )
                 response_body = response.read()
+                request_id = _optional_text(response.getheader("x-request-id"))
     except TimeoutError:
         raise OpenAITextError(
             "Zeitüberschreitung bei der API-Verbindung.",
@@ -191,4 +238,30 @@ def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
             error_code="connection_error", http_status=http_status
         ) from None
 
-    return _extract_text(response_body, http_status=http_status)
+    duration_ms = (time.perf_counter() - started_at) * 1000
+    response_data = _parse_response(response_body, http_status=http_status)
+    text = _extract_text(response_data, http_status=http_status)
+    usage = response_data.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+
+    return OpenAITextResult(
+        text=text,
+        requested_model=model,
+        returned_model=_optional_text(response_data.get("model")),
+        response_id=_optional_text(response_data.get("id")),
+        request_id=request_id,
+        input_tokens=_optional_token_count(usage.get("input_tokens")),
+        output_tokens=_optional_token_count(usage.get("output_tokens")),
+        total_tokens=_optional_token_count(usage.get("total_tokens")),
+        duration_ms=duration_ms,
+    )
+
+
+def generate_text(prompt: str, *, model: str = "gpt-4.1-mini") -> str:
+    """Return only text through the same single-request path and error handling.
+
+    Keep the existing signature for CLI and prompt-comparison callers. See
+    generate_text_result for request limits, diagnostics and validation rules.
+    """
+    return generate_text_result(prompt, model=model).text
