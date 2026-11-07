@@ -3,11 +3,13 @@
 import hashlib
 import json
 import sqlite3
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from run_record import AnalysisRun, CompletedRun
+from openai_text import OpenAITextError, OpenAITextResult
+from run_record import AnalysisRun, CompletedRun, ModelCallReference
 
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "db/schema.sql"
@@ -71,22 +73,25 @@ def _validate_database(connection: sqlite3.Connection, schema: str) -> None:
             raise SQLiteStorageError("Inkompatibles Cosi-Schema: Tabellen, Indizes oder Trigger weichen ab.")
 
 
-def save_analysis_run(path: str | Path, run: AnalysisRun) -> str:
-    """Initialize a new database or append one atomic run to a compatible one.
+@contextmanager
+def _run_transaction(path: str | Path, *, initialize: bool = False) -> Iterator[sqlite3.Connection]:
+    """Validate and bracket one transaction, optionally creating a new database.
 
-    Existing databases are never initialized or migrated. A failed insertion or
-    commit rolls back this run, preserving earlier runs. A failed new database
-    may retain its empty schema, just like the standalone demo.
+    Close before returning to the caller, so an external model request cannot
+    accidentally keep this transaction open. Existing files are never migrated.
+    Finalization uses initialize=False: a missing database must not be recreated.
     """
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with target.open("xb"):
+    created = False
+    if initialize:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with target.open("xb"):
+                pass
+            created = True
+        except FileExistsError:
             pass
-        created = True
-    except FileExistsError:
-        created = False
 
     try:
         with closing(open_database(target)) as connection:
@@ -97,27 +102,133 @@ def save_analysis_run(path: str | Path, run: AnalysisRun) -> str:
                 # BEGIN itself changes no data; validation precedes every INSERT.
                 connection.execute("BEGIN IMMEDIATE")
                 _validate_database(connection, schema)
-                connection.execute(
-                    """INSERT INTO runs (
-                        run_id, task_type, execution_mode, settings_json, started_at,
-                        finished_at, duration_ms, status
-                    ) VALUES (?, 'temperature_analysis', 'fixed', ?, ?, ?, ?, 'succeeded')""",
-                    (run.run_id, _json_text({"simulation": False, "threshold": run.threshold}),
-                     run.started_at, run.finished_at, run.duration_ms),
-                )
-                input_id = _insert_artifact(
-                    connection, run.run_id, kind="input_file", name=run.input_path.name,
-                    media_type="text/csv", content=run.input_bytes, file_path=run.input_path,
-                    created_at=run.started_at,
-                )
-                _insert_artifact(
-                    connection, run.run_id, kind="analysis", name="temperature_analysis",
-                    media_type="application/json", content=_json_text(run.analysis).encode("utf-8"),
-                    created_at=run.finished_at, source_id=input_id,
-                )
+                yield connection
     except sqlite3.Error as error:
         raise SQLiteStorageError(f"SQLite-Speicherung fehlgeschlagen: {error}") from error
+
+
+def _insert_run_input_analysis(
+    connection: sqlite3.Connection, run: AnalysisRun, *, model_report: bool = False,
+) -> str:
+    """Insert common evidence, leaving model-report runs open for finalization."""
+    connection.execute(
+        """INSERT INTO runs (
+            run_id, task_type, execution_mode, settings_json, started_at,
+            finished_at, duration_ms, status
+        ) VALUES (?, ?, 'fixed', ?, ?, ?, ?, ?)""",
+        (run.run_id, "temperature_report" if model_report else "temperature_analysis",
+         _json_text({"simulation": False, "threshold": run.threshold}), run.started_at,
+         None if model_report else run.finished_at, None if model_report else run.duration_ms,
+         "running" if model_report else "succeeded"),
+    )
+    input_id = _insert_artifact(
+        connection, run.run_id, kind="input_file", name=run.input_path.name,
+        media_type="text/csv", content=run.input_bytes, file_path=run.input_path,
+        created_at=run.started_at,
+    )
+    return _insert_artifact(
+        connection, run.run_id, kind="analysis", name="temperature_analysis",
+        media_type="application/json", content=_json_text(run.analysis).encode("utf-8"),
+        created_at=run.finished_at, source_id=input_id,
+    )
+
+
+def save_analysis_run(path: str | Path, run: AnalysisRun) -> str:
+    """Initialize or append one atomic analysis run, preserving earlier evidence."""
+    with _run_transaction(path, initialize=True) as connection:
+        _insert_run_input_analysis(connection, run)
     return run.run_id
+
+
+def prepare_model_run(
+    path: str | Path, run: AnalysisRun, *, prompt: str, model: str, started_at: str,
+) -> ModelCallReference:
+    """Commit the real prompt and start evidence before any model request."""
+    call_id = str(uuid4())
+    with _run_transaction(path, initialize=True) as connection:
+        analysis_id = _insert_run_input_analysis(connection, run, model_report=True)
+        connection.execute(
+            """INSERT INTO model_calls (
+                call_id, run_id, call_index, input_artifact_id, provider, model_requested,
+                prompt_text, prompt_sha256, request_json, started_at, status
+            ) VALUES (?, ?, 1, ?, 'openai', ?, ?, ?, ?, ?, 'started')""",
+            (call_id, run.run_id, analysis_id, model, prompt, _sha256(prompt.encode("utf-8")),
+             _json_text({"model": model, "input": prompt, "max_output_tokens": 600, "store": False}),
+             started_at),
+        )
+    return ModelCallReference(run.run_id, call_id, analysis_id)
+
+
+def _require_pending_call(connection: sqlite3.Connection, call: ModelCallReference) -> None:
+    """Only finalize the matching open run/call; never overwrite a completed call."""
+    pending = connection.execute(
+        """SELECT 1 FROM model_calls m JOIN runs r ON r.run_id = m.run_id
+           WHERE m.call_id = ? AND m.run_id = ? AND m.input_artifact_id = ?
+             AND m.status = 'started' AND r.status = 'running'""",
+        (call.call_id, call.run_id, call.analysis_id),
+    ).fetchone()
+    if pending is None:
+        raise SQLiteStorageError("Kein passender offener Modellaufruf zum Abschließen vorhanden.")
+
+
+def _finish_run(
+    connection: sqlite3.Connection, call: ModelCallReference, *, status: str,
+    finished_at: str, duration_ms: float, error_code: str | None = None,
+) -> None:
+    """Finalize the owning run inside the same transaction as its model call."""
+    connection.execute(
+        """UPDATE runs SET status = ?, finished_at = ?, duration_ms = ?, error_code = ?
+           WHERE run_id = ?""",
+        (status, finished_at, duration_ms, error_code, call.run_id),
+    )
+
+
+def complete_model_run(
+    path: str | Path, call: ModelCallReference, *, result: OpenAITextResult,
+    report: str, finished_at: str, run_duration_ms: float,
+) -> None:
+    """Atomically finalize the call, insert the displayed report and finish the run.
+
+    Persist only metadata delivered by the typed adapter. In particular, a
+    successful result does not expose an HTTP status, raw JSON or raw headers.
+    A failed commit leaves the previously committed running/started evidence.
+    """
+    with _run_transaction(path) as connection:
+        _require_pending_call(connection, call)
+        connection.execute(
+            """UPDATE model_calls SET status = 'succeeded', finished_at = ?, duration_ms = ?,
+                model_returned = ?, response_id = ?, request_id = ?, response_text = ?,
+                input_tokens = ?, output_tokens = ?, total_tokens = ? WHERE call_id = ? AND run_id = ?""",
+            (finished_at, result.duration_ms, result.returned_model, result.response_id,
+             result.request_id, result.text, result.input_tokens, result.output_tokens,
+             result.total_tokens, call.call_id, call.run_id),
+        )
+        _insert_artifact(
+            connection, call.run_id, kind="report", name="temperature_report", media_type="text/plain",
+            content=report.encode("utf-8"), created_at=finished_at,
+            source_id=call.analysis_id, call_id=call.call_id,
+        )
+        _finish_run(connection, call, status="succeeded", finished_at=finished_at, duration_ms=run_duration_ms)
+
+
+def fail_model_run(
+    path: str | Path, call: ModelCallReference, *, error: OpenAITextError,
+    finished_at: str, run_duration_ms: float, call_duration_ms: float,
+) -> None:
+    """Atomically persist safe adapter diagnostics and fail the run without a report.
+
+    No exception messages, credentials or raw server errors enter the database.
+    Error duration is measured locally because the adapter returns no result.
+    """
+    with _run_transaction(path) as connection:
+        _require_pending_call(connection, call)
+        connection.execute(
+            """UPDATE model_calls SET status = 'failed', finished_at = ?, duration_ms = ?,
+                error_code = ?, http_status = ? WHERE call_id = ? AND run_id = ?""",
+            (finished_at, call_duration_ms, error.error_code, error.http_status, call.call_id, call.run_id),
+        )
+        _finish_run(connection, call, status="failed", finished_at=finished_at,
+                    duration_ms=run_duration_ms, error_code=error.error_code)
 
 
 def _json_text(value: object) -> str:

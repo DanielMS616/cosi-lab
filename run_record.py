@@ -25,6 +25,15 @@ class AnalysisRun:
 
 
 @dataclass(frozen=True)
+class ModelCallReference:
+    """Identify committed start evidence without holding a database connection."""
+
+    run_id: str
+    call_id: str
+    analysis_id: str
+
+
+@dataclass(frozen=True)
 class CompletedRun:
     """Describe one successful simulated run without database-specific fields.
 

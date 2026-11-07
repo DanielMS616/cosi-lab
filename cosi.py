@@ -8,11 +8,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from openai_text import OpenAITextError, generate_text
+from openai_text import OpenAITextError, OpenAITextResult, generate_text, generate_text_result
 from report_storage import new_report_path, write_report
 from run_logging import RunLoggingError, log_run, log_step
-from run_record import AnalysisRun
-from sqlite_storage import SQLiteStorageError, save_analysis_run
+from run_record import AnalysisRun, ModelCallReference
+from sqlite_storage import (
+    SQLiteStorageError, complete_model_run, fail_model_run, prepare_model_run, save_analysis_run,
+)
 from temperature_analysis import analyze_temperatures
 from temperature_csv import read_temperature_csv
 from temperature_report import generate_temperature_report
@@ -77,6 +79,48 @@ def _request_save_approval() -> bool:
     return answer.strip().casefold() == "ja"
 
 
+def _generate_database_report(
+    database_path: str, run: AnalysisRun, model: str, run_started_counter: float,
+) -> str:
+    """Persist start evidence, request once and atomically record the outcome.
+
+    The report function supplies the actual prompt to our generator. Preparation
+    must return after commit/close before the adapter is called. No retry follows
+    a model failure or a failed final save. Unexpected interruption leaves the
+    committed start evidence open rather than claiming a confirmed outcome.
+    """
+    call: ModelCallReference | None = None
+    response: OpenAITextResult | None = None
+
+    def generate_recorded_text(prompt: str) -> str:
+        """Adapt the typed result and preserve failure diagnostics before re-raising."""
+        # nonlocal updates the surrounding function's variables, so it can
+        # finalize the same call/result after the report function has returned.
+        nonlocal call, response
+        call = prepare_model_run(database_path, run, prompt=prompt, model=model, started_at=_utc_now())
+        call_started_counter = time.perf_counter()
+        try:
+            response = generate_text_result(prompt, model=model)
+        except OpenAITextError as error:
+            fail_model_run(
+                database_path, call, error=error, finished_at=_utc_now(),
+                run_duration_ms=(time.perf_counter() - run_started_counter) * 1000,
+                call_duration_ms=(time.perf_counter() - call_started_counter) * 1000,
+            )
+            raise
+        return response.text
+
+    model_report = generate_temperature_report(run.analysis, run.threshold, generate_recorded_text)
+    if call is None or response is None:
+        raise ValueError("Die Berichtsfunktion hat keinen Modellaufruf ausgeführt.")
+    complete_model_run(
+        database_path, call, result=response,
+        report=_format_report(run.analysis, run.threshold, model_report),
+        finished_at=_utc_now(), run_duration_ms=(time.perf_counter() - run_started_counter) * 1000,
+    )
+    return model_report
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments, calculate all results, and then print a report.
 
@@ -87,8 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     Saving requires a preview and explicit approval. Declining or interrupting
     approval returns 0 without saving, unless logging fails. A preview is not
     a success report; saving and final logging must succeed before confirmation.
-    --database persists CSV/analysis only and cannot be combined with model or
-    report-file options. Without it, no database is opened or initialized.
+    --database persists CSV/analysis and optional model evidence, but cannot be
+    combined with --save-report. Without it, no database is opened or initialized.
     """
     parser = argparse.ArgumentParser(
         description=("Temperaturmessungen aus einer CSV-Datei auswerten; "
@@ -126,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         "--database",
         metavar="PATH",
         help="CSV-Verweis und Analyse in einer neuen oder kompatiblen Cosi-Datenbank speichern; "
-             "nicht mit --model-report oder --save-report kombinierbar.",
+             "mit --model-report auch Modellaufruf und Bericht; nicht mit --save-report kombinierbar.",
     )
     arguments.add_argument(
         "--log-dir",
@@ -139,8 +183,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Argument errors and help exit here, before files or logs are created.
     args = parser.parse_args(argv)
-    if args.database is not None and (args.model_report or args.save_report):
-        parser.error("--database kann nicht mit --model-report oder --save-report kombiniert werden.")
+    if args.database is not None and args.save_report:
+        parser.error("--database kann nicht mit --save-report kombiniert werden.")
     if args.model is not None and not args.model_report:
         parser.error("--model ist nur zusammen mit --model-report erlaubt.")
 
@@ -165,18 +209,6 @@ def main(argv: list[str] | None = None) -> int:
             with log_step(logger, "temperature_analysis"):
                 temperatures = [record["temperature_c"] for record in records]
                 result = analyze_temperatures(temperatures, threshold=args.threshold)
-            if args.model_report:
-                model = args.model if args.model is not None else "gpt-4.1-mini"
-
-                def generate_model_text(prompt: str) -> str:
-                    """Bind the selected model to the report's one-argument generator."""
-                    return generate_text(prompt, model=model)
-
-                with log_step(logger, "model_report"):
-                    model_report = generate_temperature_report(
-                        result, args.threshold, generate_model_text
-                    )
-            report = _format_report(result, args.threshold, model_report)
             if args.database is not None:
                 # Reuse the log identity when both storage formats are requested.
                 run_id = logger.run_id if logger is not None else str(uuid4())
@@ -186,6 +218,26 @@ def main(argv: list[str] | None = None) -> int:
                     finished_at=_utc_now(),
                     duration_ms=(time.perf_counter() - database_started_counter) * 1000,
                 )
+            if args.model_report:
+                model = args.model if args.model is not None else "gpt-4.1-mini"
+
+                def generate_model_text(prompt: str) -> str:
+                    """Bind the selected model to the report's one-argument generator."""
+                    return generate_text(prompt, model=model)
+
+                with log_step(logger, "model_report"):
+                    if args.database is not None:
+                        database_attempted = True
+                        model_report = _generate_database_report(
+                            args.database, run, model, database_started_counter,
+                        )
+                        database_saved = True
+                    else:
+                        model_report = generate_temperature_report(
+                            result, args.threshold, generate_model_text
+                        )
+            report = _format_report(result, args.threshold, model_report)
+            if args.database is not None and not args.model_report:
                 with log_step(logger, "database_save"):
                     database_attempted = True
                     save_analysis_run(args.database, run)

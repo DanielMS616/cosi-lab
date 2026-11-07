@@ -171,7 +171,7 @@ class SQLiteCliTests(unittest.TestCase):
     def test_incompatible_options_fail_before_processing_or_creating_files(self) -> None:
         """Forbidden combinations are argument errors even with valid input paths."""
         with patch("cosi.read_temperature_csv") as importer, patch("cosi.save_analysis_run") as save:
-            for options in (["--model-report"], ["--save-report"], ["--model-report", "--save-report"]):
+            for options in (["--save-report"], ["--model-report", "--save-report"]):
                 code, output, errors = self.call_main([
                     "--database", str(self.target), "--log-dir", str(self.root / "logs"), *options,
                 ])
