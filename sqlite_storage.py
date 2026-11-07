@@ -9,7 +9,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from openai_text import OpenAITextError, OpenAITextResult
-from run_record import AnalysisRun, CompletedRun, ModelCallReference
+from run_record import (
+    AnalysisRun, ApprovalDecision, CompletedRun, ExportReference, ModelCallReference, ReportReference,
+)
 
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "db/schema.sql"
@@ -109,8 +111,10 @@ def _run_transaction(path: str | Path, *, initialize: bool = False) -> Iterator[
 
 def _insert_run_input_analysis(
     connection: sqlite3.Connection, run: AnalysisRun, *, model_report: bool = False,
+    keep_run_open: bool = False,
 ) -> str:
-    """Insert common evidence, leaving model-report runs open for finalization."""
+    """Insert common evidence, leaving pending model or export runs open."""
+    pending = model_report or keep_run_open
     connection.execute(
         """INSERT INTO runs (
             run_id, task_type, execution_mode, settings_json, started_at,
@@ -118,8 +122,8 @@ def _insert_run_input_analysis(
         ) VALUES (?, ?, 'fixed', ?, ?, ?, ?, ?)""",
         (run.run_id, "temperature_report" if model_report else "temperature_analysis",
          _json_text({"simulation": False, "threshold": run.threshold}), run.started_at,
-         None if model_report else run.finished_at, None if model_report else run.duration_ms,
-         "running" if model_report else "succeeded"),
+         None if pending else run.finished_at, None if pending else run.duration_ms,
+         "running" if pending else "succeeded"),
     )
     input_id = _insert_artifact(
         connection, run.run_id, kind="input_file", name=run.input_path.name,
@@ -172,26 +176,27 @@ def _require_pending_call(connection: sqlite3.Connection, call: ModelCallReferen
 
 
 def _finish_run(
-    connection: sqlite3.Connection, call: ModelCallReference, *, status: str,
+    connection: sqlite3.Connection, run_id: str, *, status: str,
     finished_at: str, duration_ms: float, error_code: str | None = None,
 ) -> None:
-    """Finalize the owning run inside the same transaction as its model call."""
+    """Finalize the owning run together with its current model/export operation."""
     connection.execute(
         """UPDATE runs SET status = ?, finished_at = ?, duration_ms = ?, error_code = ?
            WHERE run_id = ?""",
-        (status, finished_at, duration_ms, error_code, call.run_id),
+        (status, finished_at, duration_ms, error_code, run_id),
     )
 
 
 def complete_model_run(
     path: str | Path, call: ModelCallReference, *, result: OpenAITextResult,
-    report: str, finished_at: str, run_duration_ms: float,
-) -> None:
+    report: str, finished_at: str, run_duration_ms: float, keep_run_open: bool = False,
+) -> ReportReference:
     """Atomically finalize the call, insert the displayed report and finish the run.
 
     Persist only metadata delivered by the typed adapter. In particular, a
     successful result does not expose an HTTP status, raw JSON or raw headers.
-    A failed commit leaves the previously committed running/started evidence.
+    With keep_run_open, the model call finishes but the run awaits an export
+    decision. A failed commit retains running/started evidence.
     """
     with _run_transaction(path) as connection:
         _require_pending_call(connection, call)
@@ -203,12 +208,13 @@ def complete_model_run(
              result.request_id, result.text, result.input_tokens, result.output_tokens,
              result.total_tokens, call.call_id, call.run_id),
         )
-        _insert_artifact(
-            connection, call.run_id, kind="report", name="temperature_report", media_type="text/plain",
-            content=report.encode("utf-8"), created_at=finished_at,
+        report_ref = _archive_report(
+            connection, call.run_id, report=report, created_at=finished_at,
             source_id=call.analysis_id, call_id=call.call_id,
         )
-        _finish_run(connection, call, status="succeeded", finished_at=finished_at, duration_ms=run_duration_ms)
+        if not keep_run_open:
+            _finish_run(connection, call.run_id, status="succeeded", finished_at=finished_at, duration_ms=run_duration_ms)
+    return report_ref
 
 
 def fail_model_run(
@@ -227,8 +233,107 @@ def fail_model_run(
                 error_code = ?, http_status = ? WHERE call_id = ? AND run_id = ?""",
             (finished_at, call_duration_ms, error.error_code, error.http_status, call.call_id, call.run_id),
         )
-        _finish_run(connection, call, status="failed", finished_at=finished_at,
+        _finish_run(connection, call.run_id, status="failed", finished_at=finished_at,
                     duration_ms=run_duration_ms, error_code=error.error_code)
+
+
+def _archive_report(
+    connection: sqlite3.Connection, run_id: str, *, report: str, created_at: str,
+    source_id: str, call_id: str | None = None,
+) -> ReportReference:
+    """Insert exact report bytes and return the identity used by approval guards."""
+    content = report.encode("utf-8")
+    artifact_id = _insert_artifact(
+        connection, run_id, kind="report", name="temperature_report", media_type="text/plain",
+        content=content, created_at=created_at, source_id=source_id, call_id=call_id,
+    )
+    return ReportReference(run_id, artifact_id, _sha256(content), len(content))
+
+
+def archive_analysis_report(path: str | Path, run: AnalysisRun, report: str) -> ReportReference:
+    """Commit input, analysis and the exact report before terminal approval."""
+    with _run_transaction(path, initialize=True) as connection:
+        analysis_id = _insert_run_input_analysis(connection, run, keep_run_open=True)
+        report_ref = _archive_report(
+            connection, run.run_id, report=report, created_at=run.finished_at, source_id=analysis_id,
+        )
+    return report_ref
+
+
+def record_export_decision(
+    path: str | Path, report: ReportReference, target: Path, decision: ApprovalDecision, *,
+    decided_at: str, run_duration_ms: float,
+) -> ExportReference | None:
+    """Commit approval and, only for explicit yes, the export start together.
+
+    A decline finalizes the run successfully without creating an export. The
+    schema enforces the exact report/hash/target binding and explicit_yes reason.
+    All connections/transactions are closed before returning for file I/O.
+    """
+    approval_id = str(uuid4())
+    export_id = str(uuid4()) if decision.approved else None
+    with _run_transaction(path) as connection:
+        archived = connection.execute(
+            """SELECT 1 FROM artifacts a JOIN runs r ON r.run_id = a.run_id
+               WHERE a.artifact_id = ? AND a.run_id = ? AND a.kind = 'report'
+                 AND a.content_sha256 = ? AND a.byte_count = ? AND r.status = 'running'""",
+            (report.artifact_id, report.run_id, report.content_sha256, report.byte_count),
+        ).fetchone()
+        if archived is None:
+            raise SQLiteStorageError("Kein passender archivierter Bericht in einem offenen Lauf vorhanden.")
+        connection.execute(
+            """INSERT INTO approvals (
+                approval_id, run_id, artifact_id, action, target_path, content_sha256,
+                decision, reason_code, actor, decided_at
+            ) VALUES (?, ?, ?, 'export_report', ?, ?, ?, ?, 'terminal_user', ?)""",
+            (approval_id, report.run_id, report.artifact_id, str(target), report.content_sha256,
+             "approved" if decision.approved else "declined", decision.reason_code, decided_at),
+        )
+        if decision.approved:
+            connection.execute(
+                """INSERT INTO exports (
+                    export_id, run_id, artifact_id, approval_id, target_path, content_sha256,
+                    started_at, status, file_state
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'started', 'unknown')""",
+                (export_id, report.run_id, report.artifact_id, approval_id, str(target),
+                 report.content_sha256, decided_at),
+            )
+        else:
+            _finish_run(connection, report.run_id, status="succeeded", finished_at=decided_at,
+                        duration_ms=run_duration_ms)
+    if export_id is None:
+        return None
+    return ExportReference(report.run_id, export_id, report.artifact_id, target, report.byte_count)
+
+
+def finish_export(
+    path: str | Path, export: ExportReference, *, finished_at: str, duration_ms: float,
+    run_duration_ms: float, error_code: str | None = None,
+) -> None:
+    """Atomically confirm file completion or record failure, then finalize the run.
+
+    A file error does not establish absent/partial/complete file state, so retain
+    unknown and no byte count. On success write_report has written and closed the
+    exact archived bytes. A database failure rolls back this confirmation only.
+    """
+    status = "succeeded" if error_code is None else "failed"
+    with _run_transaction(path) as connection:
+        pending = connection.execute(
+            """SELECT 1 FROM exports e JOIN runs r ON r.run_id = e.run_id
+               WHERE e.export_id = ? AND e.run_id = ? AND e.artifact_id = ? AND e.target_path = ?
+                 AND e.status = 'started' AND r.status = 'running'""",
+            (export.export_id, export.run_id, export.artifact_id, str(export.target_path)),
+        ).fetchone()
+        if pending is None:
+            raise SQLiteStorageError("Kein passender offener Export zum Abschließen vorhanden.")
+        connection.execute(
+            """UPDATE exports SET status = ?, finished_at = ?, duration_ms = ?,
+                file_state = ?, written_bytes = ?, error_code = ? WHERE export_id = ? AND run_id = ?""",
+            (status, finished_at, duration_ms, "complete" if error_code is None else "unknown",
+             export.byte_count if error_code is None else None, error_code, export.export_id, export.run_id),
+        )
+        _finish_run(connection, export.run_id, status=status, finished_at=finished_at,
+                    duration_ms=run_duration_ms, error_code=error_code)
 
 
 def _json_text(value: object) -> str:

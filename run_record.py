@@ -34,6 +34,35 @@ class ModelCallReference:
 
 
 @dataclass(frozen=True)
+class ReportReference:
+    """Bind approval to an immutable archived report and its UTF-8 fingerprint."""
+
+    run_id: str
+    artifact_id: str
+    content_sha256: str
+    byte_count: int
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """Carry a normalized terminal decision without retaining the raw input."""
+
+    approved: bool
+    reason_code: str
+
+
+@dataclass(frozen=True)
+class ExportReference:
+    """Identify a committed export start for one report and concrete target."""
+
+    run_id: str
+    export_id: str
+    artifact_id: str
+    target_path: Path
+    byte_count: int
+
+
+@dataclass(frozen=True)
 class CompletedRun:
     """Describe one successful simulated run without database-specific fields.
 

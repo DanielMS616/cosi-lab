@@ -168,15 +168,15 @@ class SQLiteCliTests(unittest.TestCase):
             save_analysis_run(self.target, replace(run, run_id=str(uuid4())))
         self.assertEqual(self.snapshot(), original)
 
-    def test_incompatible_options_fail_before_processing_or_creating_files(self) -> None:
-        """Forbidden combinations are argument errors even with valid input paths."""
+    def test_invalid_model_option_fails_before_processing_or_creating_files(self) -> None:
+        """A model name still requires --model-report, also when exporting to a file."""
         with patch("cosi.read_temperature_csv") as importer, patch("cosi.save_analysis_run") as save:
-            for options in (["--save-report"], ["--model-report", "--save-report"]):
+            for options in (["--model", "test-model"], ["--save-report", "--model", "test-model"]):
                 code, output, errors = self.call_main([
                     "--database", str(self.target), "--log-dir", str(self.root / "logs"), *options,
                 ])
                 self.assertEqual((code, output), (2, ""))
-                self.assertIn("--database kann nicht mit", errors)
+                self.assertIn("--model ist nur zusammen mit --model-report", errors)
             importer.assert_not_called()
             save.assert_not_called()
         self.assertEqual(list(self.root.iterdir()), [])

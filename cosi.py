@@ -11,9 +11,10 @@ from uuid import uuid4
 from openai_text import OpenAITextError, OpenAITextResult, generate_text, generate_text_result
 from report_storage import new_report_path, write_report
 from run_logging import RunLoggingError, log_run, log_step
-from run_record import AnalysisRun, ModelCallReference
+from run_record import AnalysisRun, ApprovalDecision, ExportReference, ModelCallReference, ReportReference
 from sqlite_storage import (
-    SQLiteStorageError, complete_model_run, fail_model_run, prepare_model_run, save_analysis_run,
+    SQLiteStorageError, archive_analysis_report, complete_model_run, fail_model_run,
+    finish_export, prepare_model_run, record_export_decision, save_analysis_run,
 )
 from temperature_analysis import analyze_temperatures
 from temperature_csv import read_temperature_csv
@@ -69,19 +70,29 @@ def _format_report(
     return report + "\n"
 
 
-def _request_save_approval() -> bool:
-    """Only a trimmed, case-insensitive 'ja' grants approval; interruptions deny it."""
+def _request_save_decision() -> ApprovalDecision:
+    """Normalize terminal input and distinguish denial, EOF and interruption."""
     try:
         answer = input("Diesen Bericht am angezeigten Ziel speichern? Nur 'ja' erlaubt Speichern: ")
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print("\nEingabe beendet; keine Freigabe.")
-        return False
-    return answer.strip().casefold() == "ja"
+        return ApprovalDecision(False, "eof")
+    except KeyboardInterrupt:
+        print("\nEingabe beendet; keine Freigabe.")
+        return ApprovalDecision(False, "interrupted")
+    approved = answer.strip().casefold() == "ja"
+    return ApprovalDecision(approved, "explicit_yes" if approved else "not_approved")
+
+
+def _request_save_approval() -> bool:
+    """Keep the existing boolean interface for exports without a database."""
+    return _request_save_decision().approved
 
 
 def _generate_database_report(
     database_path: str, run: AnalysisRun, model: str, run_started_counter: float,
-) -> str:
+    *, keep_run_open: bool = False,
+) -> tuple[str, ReportReference]:
     """Persist start evidence, request once and atomically record the outcome.
 
     The report function supplies the actual prompt to our generator. Preparation
@@ -113,12 +124,13 @@ def _generate_database_report(
     model_report = generate_temperature_report(run.analysis, run.threshold, generate_recorded_text)
     if call is None or response is None:
         raise ValueError("Die Berichtsfunktion hat keinen Modellaufruf ausgeführt.")
-    complete_model_run(
+    report_ref = complete_model_run(
         database_path, call, result=response,
         report=_format_report(run.analysis, run.threshold, model_report),
         finished_at=_utc_now(), run_duration_ms=(time.perf_counter() - run_started_counter) * 1000,
+        keep_run_open=keep_run_open,
     )
-    return model_report
+    return model_report, report_ref
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,8 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     Saving requires a preview and explicit approval. Declining or interrupting
     approval returns 0 without saving, unless logging fails. A preview is not
     a success report; saving and final logging must succeed before confirmation.
-    --database persists CSV/analysis and optional model evidence, but cannot be
-    combined with --save-report. Without it, no database is opened or initialized.
+    --database archives reports before approval, then records the decision and
+    export lifecycle. Without it, no database is opened or initialized.
     """
     parser = argparse.ArgumentParser(
         description=("Temperaturmessungen aus einer CSV-Datei auswerten; "
@@ -170,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         "--database",
         metavar="PATH",
         help="CSV-Verweis und Analyse in einer neuen oder kompatiblen Cosi-Datenbank speichern; "
-             "mit --model-report auch Modellaufruf und Bericht; nicht mit --save-report kombinierbar.",
+             "mit --model-report auch Modellaufruf, mit --save-report auch Freigabe und Datei-Export.",
     )
     arguments.add_argument(
         "--log-dir",
@@ -183,8 +195,6 @@ def main(argv: list[str] | None = None) -> int:
 
     # Argument errors and help exit here, before files or logs are created.
     args = parser.parse_args(argv)
-    if args.database is not None and args.save_report:
-        parser.error("--database kann nicht mit --save-report kombiniert werden.")
     if args.model is not None and not args.model_report:
         parser.error("--model ist nur zusammen mit --model-report erlaubt.")
 
@@ -193,7 +203,11 @@ def main(argv: list[str] | None = None) -> int:
     save_attempted = False
     saved = False
     database_saved = False
+    # This flag tracks the current operation, so file errors and database errors
+    # keep distinct diagnostics even after the report has already been archived.
     database_attempted = False
+    report_ref: ReportReference | None = None
+    export_ref: ExportReference | None = None
     try:
         with log_run(args.log_dir) as logger:
             if args.database is not None:
@@ -228,10 +242,12 @@ def main(argv: list[str] | None = None) -> int:
                 with log_step(logger, "model_report"):
                     if args.database is not None:
                         database_attempted = True
-                        model_report = _generate_database_report(
+                        model_report, report_ref = _generate_database_report(
                             args.database, run, model, database_started_counter,
+                            keep_run_open=args.save_report,
                         )
                         database_saved = True
+                        database_attempted = False
                     else:
                         model_report = generate_temperature_report(
                             result, args.threshold, generate_model_text
@@ -240,25 +256,68 @@ def main(argv: list[str] | None = None) -> int:
             if args.database is not None and not args.model_report:
                 with log_step(logger, "database_save"):
                     database_attempted = True
-                    save_analysis_run(args.database, run)
+                    if args.save_report:
+                        report_ref = archive_analysis_report(args.database, run, report)
+                    else:
+                        save_analysis_run(args.database, run)
                     database_saved = True
+                    database_attempted = False
             if args.save_report:
                 # The program chooses the destination; model text never controls it.
                 target_path = new_report_path()
-                print(f"Vorschau — noch nicht gespeichert. Zielpfad: {target_path}")
+                if args.database is not None:
+                    target_path = target_path.resolve()
+                    print(f"Vorschau — noch nicht als Datei gespeichert. Zielpfad: {target_path}")
+                else:
+                    print(f"Vorschau — noch nicht gespeichert. Zielpfad: {target_path}")
                 print("--- Bericht beginnt ---")
                 print(report, end="")
                 print("--- Bericht endet ---")
-                approved = _request_save_approval()
+                if args.database is not None:
+                    if report_ref is None:
+                        raise SQLiteStorageError("Der Bericht wurde vor der Freigabe nicht archiviert.")
+                    decision = _request_save_decision()
+                    approved = decision.approved
+                    database_attempted = True
+                    export_ref = record_export_decision(
+                        args.database, report_ref, target_path, decision, decided_at=_utc_now(),
+                        run_duration_ms=(time.perf_counter() - database_started_counter) * 1000,
+                    )
+                    database_attempted = False
+                    if approved and export_ref is None:
+                        raise SQLiteStorageError("Der Exportstart wurde nicht bestätigt.")
+                else:
+                    approved = _request_save_approval()
                 if logger is not None:
                     event = "save_approved" if approved else "save_declined"
                     logger.write_event(event, "report_save", "success")
                 if approved:
                     with log_step(logger, "report_save"):
+                        export_started_counter = time.perf_counter() if args.database is not None else None
                         save_attempted = True
-                        write_report(target_path, report)
+                        try:
+                            write_report(target_path, report)
+                        except (OSError, ValueError) as error:
+                            if export_ref is not None:
+                                database_attempted = True
+                                finish_export(
+                                    args.database, export_ref, finished_at=_utc_now(),
+                                    duration_ms=(time.perf_counter() - export_started_counter) * 1000,
+                                    run_duration_ms=(time.perf_counter() - database_started_counter) * 1000,
+                                    error_code="file_exists" if isinstance(error, FileExistsError) else "file_error",
+                                )
+                                database_attempted = False
+                            raise
                         # Set this before step_finished: even that log write can fail.
                         saved = True
+                        if export_ref is not None:
+                            database_attempted = True
+                            finish_export(
+                                args.database, export_ref, finished_at=_utc_now(),
+                                duration_ms=(time.perf_counter() - export_started_counter) * 1000,
+                                run_duration_ms=(time.perf_counter() - database_started_counter) * 1000,
+                            )
+                            database_attempted = False
     except RunLoggingError as error:
         print(f"Fehler bei der Protokollierung: {error}", file=sys.stderr)
         if database_saved:
@@ -275,10 +334,16 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except SQLiteStorageError as error:
         print(f"Fehler beim Speichern in der Datenbank: {error}", file=sys.stderr)
+        if saved:
+            print(f"Die Datei wurde bereits vollständig geschrieben und geschlossen: {target_path}. "
+                  "Nur die Bestätigung in der Datenbank fehlt. Der Export wird nicht wiederholt.", file=sys.stderr)
         return 1
     except (OSError, ValueError) as error:
         if database_attempted:
             print(f"Fehler beim Speichern in der Datenbank: {error}", file=sys.stderr)
+            if saved:
+                print(f"Die Datei wurde bereits vollständig geschrieben und geschlossen: {target_path}. "
+                      "Nur die Bestätigung in der Datenbank fehlt. Der Export wird nicht wiederholt.", file=sys.stderr)
         elif save_attempted:
             print(f"Fehler beim Speichern des Berichts: {error}", file=sys.stderr)
             print("Schreibabschluss nicht bestätigt; eine vorhandene Zieldatei wurde nicht "
