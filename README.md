@@ -167,6 +167,16 @@ Die Laufdauer umfasst die Verarbeitung und Teile der Protokollierung: Sie beginn
 
 `run_finished` mit `status: success` beschreibt erfolgreiche Verarbeitung vor dem Schließen der Protokolldatei. Ein anschließender Schließfehler führt dennoch zu CLI-Rückgabecode `1`. Versuchsreihen müssen deshalb zusätzlich den Prozess-Rückgabecode erfassen.
 
+Das separate Skript `cosi_runs.py` zeigt eine schreibgeschützte Übersicht der neuesten gespeicherten Läufe, einen pro Zeile:
+
+```bash
+.venv/bin/python cosi_runs.py --database data/exports.sqlite3 --limit 20
+```
+
+Jede Zeile enthält Lauf-ID, UTC-Startzeit, Aufgabentyp und Laufstatus. Wenn vorhanden, folgen Modellstatus, zurückgemeldetes Modell, Fehlercodes, HTTP-Status, Freigabe- und Exportstatus. Fehlercodes sind nach Lauf, Modellaufruf und Export gekennzeichnet. Modellaufruf und Entscheidung werden jeweils nach dem neuesten Start- beziehungsweise Entscheidungszeitpunkt ausgewählt. Bei gleichem Zeitpunkt entscheiden Aufrufnummer und IDs stabil; die neuesten Läufe werden nach Startzeit und danach Lauf-ID absteigend sortiert. Der Export gehört immer zur angezeigten Entscheidung, auch wenn eine ältere Freigabe bereits einen Export hatte. `running` und `started` werden ausdrücklich mit „kein Abschluss gespeichert“ gekennzeichnet. Prompt, Modellantwort und Berichtstext werden weder für die Übersicht abgefragt noch angezeigt; Steuerzeichen in Metadaten werden maskiert, damit ein Lauf genau eine Ausgabezeile behält.
+
+Die Datenbank wird mit SQLite-URI `mode=ro` geöffnet und mit der bestehenden Cosi-Schemaprüfung validiert. Eine Lesetransaktion hält Prüfung und Abfrage im selben Datenstand; vor der Ausgabe ist die Verbindung wieder geschlossen. Fehlende Pfade werden nicht angelegt, fremde oder unbekannte Schemata werden abgelehnt. `--database` ist erforderlich; `--limit` ist optional, standardmäßig `20`, und muss eine positive Ganzzahl im SQLite-Zahlenbereich sein. Eine gültige leere Datenbank liefert keine Ausgabezeilen. Rückgabecodes: `0` für erfolgreiche Übersicht oder Hilfe, `1` für Lese-/Kompatibilitätsfehler, `2` für ungültige Argumente. Es gibt keinen Modellaufruf oder Export. Offline-Tests prüfen Darstellung, Sortierung und Limit mit echten temporären Datenbanken, mehrere Einträge ohne vervielfachte Laufzeilen, die Zuordnung zum neuesten Freigabeentscheid sowie den tatsächlich durchgesetzten Schreibschutz.
+
 ## Textschnittstelle für Temperaturberichte
 
 `temperature_report.generate_temperature_report(analysis_result, threshold, text_generator)` erstellt aus den sieben vorhandenen Kennzahlen und dem zugehörigen Schwellenwert einen Auftrag für einen kurzen deutschen Bericht. Rohdaten, Dateipfade und zusätzliche Wörterbucheinträge werden nicht übergeben; die Kennzahlen werden nicht neu berechnet. Der Auftrag verlangt, fehlende Werte und Werte strikt oberhalb des Schwellenwerts korrekt zu beschreiben und keine Ursachen zu erfinden.

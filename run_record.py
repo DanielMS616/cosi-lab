@@ -1,4 +1,4 @@
-"""Carry completed run data between orchestration and a storage implementation."""
+"""Carry run evidence and summaries between orchestration and storage."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +60,24 @@ class ExportReference:
     artifact_id: str
     target_path: Path
     byte_count: int
+
+
+@dataclass(frozen=True)
+class RunSummary:
+    """Carry overview metadata only, without prompts, responses or report text."""
+
+    run_id: str
+    started_at: str
+    task_type: str
+    status: str
+    run_error_code: str | None
+    model_status: str | None
+    model_returned: str | None
+    model_error_code: str | None
+    http_status: int | None
+    approval_status: str | None
+    export_status: str | None
+    export_error_code: str | None
 
 
 @dataclass(frozen=True)

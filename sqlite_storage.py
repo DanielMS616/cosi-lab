@@ -1,4 +1,4 @@
-"""Persist completed analysis and demo runs using the unchanged SQLite schema."""
+"""Read and persist Cosi run evidence using the unchanged SQLite schema."""
 
 import hashlib
 import json
@@ -11,6 +11,7 @@ from uuid import uuid4
 from openai_text import OpenAITextError, OpenAITextResult
 from run_record import (
     AnalysisRun, ApprovalDecision, CompletedRun, ExportReference, ModelCallReference, ReportReference,
+    RunSummary,
 )
 
 
@@ -39,6 +40,70 @@ def open_database(path: str | Path) -> sqlite3.Connection:
     return connection
 
 
+def open_readonly_database(path: str | Path) -> sqlite3.Connection:
+    """Open and validate an existing database with mode=ro, without initialization.
+
+    A read transaction keeps schema validation and subsequent queries in the
+    same snapshot. The caller must close the connection, also ending that read
+    transaction. The reference schema is constructed only in memory.
+    """
+    target = Path(path)
+    if not target.is_file():
+        raise SQLiteStorageError(f"Datenbankdatei nicht gefunden oder keine reguläre Datei: {target}")
+    connection = sqlite3.connect(target.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        _enable_guards(connection)
+        connection.execute("BEGIN")
+        _validate_database(connection, SCHEMA_PATH.read_text(encoding="utf-8"))
+    except BaseException:
+        connection.close()
+        raise
+    return connection
+
+
+def list_runs(path: str | Path, *, limit: int = 20) -> list[RunSummary]:
+    """Read newest runs once each, with the newest call and newest decision.
+
+    Limit runs first. Each correlated subquery selects at most one associated
+    row, avoiding multiplication of calls and decisions. An export is selected
+    through the displayed approval, never independently from an older decision.
+    Timestamps define newest; call_index/IDs make ties deterministic.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 2**63 - 1:
+        raise ValueError("--limit muss eine positive Ganzzahl im SQLite-Zahlenbereich sein.")
+    query = """
+        WITH newest_runs AS (
+            SELECT run_id, started_at, task_type, status, error_code FROM runs
+            ORDER BY started_at DESC, run_id DESC LIMIT ?
+        )
+        SELECT r.run_id, r.started_at, r.task_type, r.status, r.error_code AS run_error_code,
+               m.status AS model_status, m.model_returned, m.error_code AS model_error_code,
+               m.http_status, a.decision AS approval_status,
+               e.status AS export_status, e.error_code AS export_error_code
+        FROM newest_runs r
+        LEFT JOIN model_calls m ON m.call_id = (
+            SELECT latest.call_id FROM model_calls latest WHERE latest.run_id = r.run_id
+            ORDER BY latest.started_at DESC, latest.call_index DESC, latest.call_id DESC LIMIT 1
+        )
+        LEFT JOIN approvals a ON a.approval_id = (
+            SELECT latest.approval_id FROM approvals latest WHERE latest.run_id = r.run_id
+            ORDER BY latest.decided_at DESC, latest.approval_id DESC LIMIT 1
+        )
+        LEFT JOIN exports e ON e.run_id = r.run_id AND e.approval_id = a.approval_id
+        ORDER BY r.started_at DESC, r.run_id DESC
+    """
+    try:
+        with closing(open_readonly_database(path)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(query, (limit,)).fetchall()
+            # SQL aliases match the dataclass fields. ** passes this mapping as
+            # named arguments, keeping every field independent of column order.
+            summaries = [RunSummary(**dict(row)) for row in rows]
+    except (sqlite3.Error, OSError) as error:
+        raise SQLiteStorageError(f"Datenbank konnte nicht gelesen werden: {error}") from error
+    return summaries
+
+
 def _enable_guards(connection: sqlite3.Connection) -> None:
     """Enable and verify constraints before starting any transaction."""
     connection.execute("PRAGMA foreign_keys = ON")
@@ -57,7 +122,7 @@ def _schema_objects(connection: sqlite3.Connection) -> list[tuple]:
 
 
 def _validate_database(connection: sqlite3.Connection, schema: str) -> None:
-    """Reject foreign, unknown or modified schemas before inserting any evidence.
+    """Reject foreign, unknown or modified schemas before reading or writing evidence.
 
     The reference is built in memory from the unchanged SQL file. Comparing DDL
     includes constraints and triggers, rather than trusting two header numbers.
