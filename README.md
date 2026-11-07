@@ -184,6 +184,40 @@ Neu erzeugte Vergleichsprotokolle verwenden `schema_version: 2` und ergänzen `e
 
 Bereits geschriebene Nachweise bleiben bei Abbruch erhalten; ein Start ohne Abschluss belegt kein erfolgreich empfangenes Ergebnis. Beschädigte oder unvollständige letzte Zeilen sind bei einem Schreibfehler möglich; `flush` garantiert keine Haltbarkeit bei Systemausfall. Vorhandene Versuchsordner werden nicht wiederverwendet. Die automatisierten Tests ersetzen historische Quellen und Modellgenerator durch Fakes. Der Betreiber hat den Live-Vergleich ausgeführt; die anschließende manuelle Durchsicht ergab bei 15 gespeicherten Antworten korrekte und vollständige Kennzahlen sowie eine falsche Zusatzbehauptung. Neun Adapterfehler schränken die Auswertung ein; Details stehen in der [Ergebnisnotiz](docs/versuche/2026-11-02-promptvergleich-ab.md).
 
+## Offline-Demolauf mit SQLite
+
+Der separate Demolauf verwendet die Beispiel-CSV, den bestehenden Import, die Temperaturauswertung mit Schwellenwert `60.0` und die bestehende Berichtsfunktion. Er benötigt weder API-Schlüssel noch Netzwerk. Der simulierte Generator erfasst den tatsächlich erzeugten Prompt und liefert ein festes `OpenAITextResult`; ein Text-Wrapper verbindet ihn mit der unveränderten Berichtsschnittstelle. Die bestehende CLI `cosi.py` bleibt unverändert.
+
+Ein Datenbankpfad muss ausdrücklich angegeben werden und darf noch nicht existieren. Beispiel aus dem Projektverzeichnis:
+
+```bash
+env -u OPENAI_API_KEY .venv/bin/python sqlite_demo.py --database data/demo.sqlite3
+```
+
+`sqlite_storage.py` legt die Datenbank exklusiv an und führt `db/schema.sql` unverändert aus. Verwendet wird nur `sqlite3` aus der Standardbibliothek; das Schema benötigt SQLite ab 3.38 mit JSON-Unterstützung. `open_database(path)` öffnet ausschließlich bestehende Datenbanken und aktiviert Fremdschlüssel sowie rekursive Trigger auf jeder Verbindung. `run_record.CompletedRun` transportiert die fertigen Laufdaten ohne SQL oder Verbindungen zwischen Ablaufsteuerung und Speicherbaustein.
+
+Ein erfolgreicher Lauf schreibt gemeinsam in einer Transaktion einen Datensatz in `runs`, drei in `artifacts` und einen in `model_calls`. Die Verknüpfung lautet CSV → Analyse → Modellaufruf; der Bericht verweist auf Analyse und Modellaufruf. Schema-gemäß wird die CSV als absoluter Dateiverweis mit SHA-256 und Bytezahl gespeichert, nicht als eingebetteter Dateiinhalt. Analyse und Bericht stehen vollständig in der Datenbank. Prompt und Antwort bleiben unverändert erhalten. Lauf und Anfrage tragen `simulation: true`; Provider, Modellnamen, Response-ID und Request-ID sind als Simulation gekennzeichnet. Tokenzahlen und Modelldauer sind feste synthetische Werte, keine Messungen oder Abrechnungsdaten. HTTP-Status, API-Rohantwort und serverseitige Metadaten bleiben `NULL`, Antwort-Header `{}`. Nicht erhobene Git-Provenienzfelder bleiben ebenfalls `NULL`. Die lokal gemessene Laufdauer umfasst die Verarbeitung vor der Speicherung, nicht den Datenbankschreibvorgang.
+
+Nach Schließen und erneutem Öffnen verbindet [db/demo_query.sql](db/demo_query.sql) die vier Bereiche. Die Abfrage lässt sich ohne zusätzliches SQLite-Kommandozeilenprogramm ausführen:
+
+```bash
+.venv/bin/python - <<'PY'
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+from sqlite_storage import open_database
+
+with closing(open_database("data/demo.sqlite3")) as connection:
+    connection.row_factory = sqlite3.Row
+    query = Path("db/demo_query.sql").read_text(encoding="utf-8")
+    rows = [dict(row) for row in connection.execute(query)]
+print(json.dumps(rows, ensure_ascii=False, indent=2))
+PY
+```
+
+Die Demo exportiert keine Berichtsdatei; `approvals` und `exports` bleiben leer. `/data/` wird von Git ignoriert. Bei Fehlern während der Speicherung werden sämtliche Laufdaten zurückgerollt; die zuvor angelegte Datenbank kann leer beziehungsweise mit Schema bestehen bleiben. Sie wird nicht automatisch gelöscht oder bei erneutem Aufruf überschrieben. Vor einer Wiederholung muss deshalb ein anderer neuer Pfad gewählt werden. Die Tests verwenden echte temporäre SQLite-Dateien und blockieren API-/Netzwerkzugriffe. Sie prüfen Persistenz nach erneutem Öffnen, Inhalte und Verknüpfungen, Metadaten, Hashes, Fremdschlüssel, rekursive Trigger, Überschreibschutz und Transaktions-Rollback; sie bewerten keine Modellqualität.
+
 ## Dokumentation und Fortschritt
 
 - [Aktueller Aufbau als Diagramme](docs/aufbau.md)
