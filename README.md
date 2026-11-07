@@ -190,6 +190,7 @@ Bereits geschriebene Nachweise bleiben bei Abbruch erhalten; ein Start ohne Absc
 - [Runbook: täglicher Fernzugriff und Einrichtung](docs/runbooks/fernzugriff.md)
 - [Journal: 31. Oktober 2026](docs/journal/2026-10-31.md)
 - [Journal: 2. November 2026](docs/journal/2026-11-02.md)
+- [Journal: 7. November 2026](docs/journal/2026-11-07.md)
 - [Versuch: CLI-Basismessung mit und ohne Protokollierung](docs/versuche/2026-11-02-cli-baseline.md)
 - [Prüfplan für Modellberichte](docs/versuche/modellberichte-pruefplan.md): vier ursprüngliche CSV-Referenzfälle und zwei Kontrollfälle mit festen Sollwerten; der Promptvergleich mit 24 Versuchen ist ausgeführt und eingeschränkt auswertbar (siehe Ergebnisnotiz). Die Offline-Prüfung bewertet keine Modellqualität.
 - [Erste echte Qualitätsprüfung der Modellberichte](docs/versuche/2026-11-02-modellberichte-erste-pruefung.md): Betreiber-Rückmeldung zu vier Einzelantworten; korrekte Kennzahlen in allen Fällen, eine falsche Zusatzbehauptung.
