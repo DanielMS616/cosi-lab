@@ -1,4 +1,4 @@
-"""Persist a completed demo run using the unchanged schema and SQLite only."""
+"""Persist completed analysis and demo runs using the unchanged SQLite schema."""
 
 import hashlib
 import json
@@ -7,10 +7,12 @@ from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 
-from run_record import CompletedRun
+from run_record import AnalysisRun, CompletedRun
 
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "db/schema.sql"
+APPLICATION_ID = 1129272137
+SCHEMA_VERSION = 1
 
 
 class SQLiteStorageError(Exception):
@@ -26,15 +28,96 @@ def open_database(path: str | Path) -> sqlite3.Connection:
     """
     connection = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=rw", uri=True)
     try:
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA recursive_triggers = ON")
-        for setting in ("foreign_keys", "recursive_triggers"):
-            if connection.execute(f"PRAGMA {setting}").fetchone()[0] != 1:
-                raise sqlite3.OperationalError(f"Could not enable {setting}.")
+        _enable_guards(connection)
     except BaseException:
         connection.close()
         raise
     return connection
+
+
+def _enable_guards(connection: sqlite3.Connection) -> None:
+    """Enable and verify constraints before starting any transaction."""
+    connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute("PRAGMA recursive_triggers = ON")
+    for setting in ("foreign_keys", "recursive_triggers"):
+        if connection.execute(f"PRAGMA {setting}").fetchone()[0] != 1:
+            raise sqlite3.OperationalError(f"Could not enable {setting}.")
+
+
+def _schema_objects(connection: sqlite3.Connection) -> list[tuple]:
+    """Read application DDL, excluding SQLite's internal indexes/statistics."""
+    return connection.execute(
+        """SELECT type, name, tbl_name, sql FROM sqlite_schema
+           WHERE name NOT GLOB 'sqlite_*' ORDER BY type, name"""
+    ).fetchall()
+
+
+def _validate_database(connection: sqlite3.Connection, schema: str) -> None:
+    """Reject foreign, unknown or modified schemas before inserting any evidence.
+
+    The reference is built in memory from the unchanged SQL file. Comparing DDL
+    includes constraints and triggers, rather than trusting two header numbers.
+    This deliberately accepts only our shipped schema, not hand-edited variants.
+    """
+    if connection.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID:
+        raise SQLiteStorageError("Keine Cosi-Datenbank: fremde Datenbankkennung.")
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    if version != SCHEMA_VERSION:
+        raise SQLiteStorageError(f"Unbekannte Cosi-Schemaversion: {version}.")
+    with closing(sqlite3.connect(":memory:")) as reference:
+        _enable_guards(reference)
+        reference.executescript(schema)
+        if _schema_objects(connection) != _schema_objects(reference):
+            raise SQLiteStorageError("Inkompatibles Cosi-Schema: Tabellen, Indizes oder Trigger weichen ab.")
+
+
+def save_analysis_run(path: str | Path, run: AnalysisRun) -> str:
+    """Initialize a new database or append one atomic run to a compatible one.
+
+    Existing databases are never initialized or migrated. A failed insertion or
+    commit rolls back this run, preserving earlier runs. A failed new database
+    may retain its empty schema, just like the standalone demo.
+    """
+    schema = SCHEMA_PATH.read_text(encoding="utf-8")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("xb"):
+            pass
+        created = True
+    except FileExistsError:
+        created = False
+
+    try:
+        with closing(open_database(target)) as connection:
+            if created:
+                connection.executescript(schema)
+            with connection:
+                # Hold the write lock while checking compatibility and inserting.
+                # BEGIN itself changes no data; validation precedes every INSERT.
+                connection.execute("BEGIN IMMEDIATE")
+                _validate_database(connection, schema)
+                connection.execute(
+                    """INSERT INTO runs (
+                        run_id, task_type, execution_mode, settings_json, started_at,
+                        finished_at, duration_ms, status
+                    ) VALUES (?, 'temperature_analysis', 'fixed', ?, ?, ?, ?, 'succeeded')""",
+                    (run.run_id, _json_text({"simulation": False, "threshold": run.threshold}),
+                     run.started_at, run.finished_at, run.duration_ms),
+                )
+                input_id = _insert_artifact(
+                    connection, run.run_id, kind="input_file", name=run.input_path.name,
+                    media_type="text/csv", content=run.input_bytes, file_path=run.input_path,
+                    created_at=run.started_at,
+                )
+                _insert_artifact(
+                    connection, run.run_id, kind="analysis", name="temperature_analysis",
+                    media_type="application/json", content=_json_text(run.analysis).encode("utf-8"),
+                    created_at=run.finished_at, source_id=input_id,
+                )
+    except sqlite3.Error as error:
+        raise SQLiteStorageError(f"SQLite-Speicherung fehlgeschlagen: {error}") from error
+    return run.run_id
 
 
 def _json_text(value: object) -> str:

@@ -3,10 +3,16 @@
 import argparse
 import math
 import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
 
 from openai_text import OpenAITextError, generate_text
 from report_storage import new_report_path, write_report
 from run_logging import RunLoggingError, log_run, log_step
+from run_record import AnalysisRun
+from sqlite_storage import SQLiteStorageError, save_analysis_run
 from temperature_analysis import analyze_temperatures
 from temperature_csv import read_temperature_csv
 from temperature_report import generate_temperature_report
@@ -33,6 +39,11 @@ def _parse_model(text: str) -> str:
     if not text.strip():
         raise argparse.ArgumentTypeError("Der Modellname darf nicht leer sein.")
     return text
+
+
+def _utc_now() -> str:
+    """Return the schema's UTC timestamp format with six fractional digits."""
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _format_report(
@@ -76,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     Saving requires a preview and explicit approval. Declining or interrupting
     approval returns 0 without saving, unless logging fails. A preview is not
     a success report; saving and final logging must succeed before confirmation.
+    --database persists CSV/analysis only and cannot be combined with model or
+    report-file options. Without it, no database is opened or initialized.
     """
     parser = argparse.ArgumentParser(
         description=("Temperaturmessungen aus einer CSV-Datei auswerten; "
@@ -110,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Bericht als Vorschau zeigen und erst nach 'ja' unter reports/<UUID>.txt speichern.",
     )
     arguments.add_argument(
+        "--database",
+        metavar="PATH",
+        help="CSV-Verweis und Analyse in einer neuen oder kompatiblen Cosi-Datenbank speichern; "
+             "nicht mit --model-report oder --save-report kombinierbar.",
+    )
+    arguments.add_argument(
         "--log-dir",
         metavar="VERZEICHNIS",
         help="Technische Ablaufereignisse in einer neuen JSONL-Datei protokollieren.",
@@ -120,6 +139,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Argument errors and help exit here, before files or logs are created.
     args = parser.parse_args(argv)
+    if args.database is not None and (args.model_report or args.save_report):
+        parser.error("--database kann nicht mit --model-report oder --save-report kombiniert werden.")
     if args.model is not None and not args.model_report:
         parser.error("--model ist nur zusammen mit --model-report erlaubt.")
 
@@ -127,10 +148,20 @@ def main(argv: list[str] | None = None) -> int:
     target_path = None
     save_attempted = False
     saved = False
+    database_saved = False
+    database_attempted = False
     try:
         with log_run(args.log_dir) as logger:
+            if args.database is not None:
+                database_started_at = _utc_now()
+                database_started_counter = time.perf_counter()
             with log_step(logger, "csv_import"):
+                if args.database is not None:
+                    input_path = Path(args.path).resolve()
+                    input_bytes = input_path.read_bytes()
                 records = read_temperature_csv(args.path)
+                if args.database is not None and input_path.read_bytes() != input_bytes:
+                    raise ValueError("Die CSV-Datei wurde während des Imports geändert.")
             with log_step(logger, "temperature_analysis"):
                 temperatures = [record["temperature_c"] for record in records]
                 result = analyze_temperatures(temperatures, threshold=args.threshold)
@@ -146,6 +177,19 @@ def main(argv: list[str] | None = None) -> int:
                         result, args.threshold, generate_model_text
                     )
             report = _format_report(result, args.threshold, model_report)
+            if args.database is not None:
+                # Reuse the log identity when both storage formats are requested.
+                run_id = logger.run_id if logger is not None else str(uuid4())
+                run = AnalysisRun(
+                    run_id=run_id, input_path=input_path, input_bytes=input_bytes,
+                    analysis=result, threshold=args.threshold, started_at=database_started_at,
+                    finished_at=_utc_now(),
+                    duration_ms=(time.perf_counter() - database_started_counter) * 1000,
+                )
+                with log_step(logger, "database_save"):
+                    database_attempted = True
+                    save_analysis_run(args.database, run)
+                    database_saved = True
             if args.save_report:
                 # The program chooses the destination; model text never controls it.
                 target_path = new_report_path()
@@ -165,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
                         saved = True
     except RunLoggingError as error:
         print(f"Fehler bei der Protokollierung: {error}", file=sys.stderr)
+        if database_saved:
+            print("Der Lauf wurde bereits in der Datenbank gespeichert; "
+                  "Protokollabschluss nicht erfolgreich.", file=sys.stderr)
         if saved:
             print(f"Bericht wurde bereits vollständig geschrieben und geschlossen: {target_path}. "
                   "Protokollabschluss nicht erfolgreich.", file=sys.stderr)
@@ -174,8 +221,13 @@ def main(argv: list[str] | None = None) -> int:
         elif args.save_report:
             print("Bericht wurde nicht gespeichert.", file=sys.stderr)
         return 1
+    except SQLiteStorageError as error:
+        print(f"Fehler beim Speichern in der Datenbank: {error}", file=sys.stderr)
+        return 1
     except (OSError, ValueError) as error:
-        if save_attempted:
+        if database_attempted:
+            print(f"Fehler beim Speichern in der Datenbank: {error}", file=sys.stderr)
+        elif save_attempted:
             print(f"Fehler beim Speichern des Berichts: {error}", file=sys.stderr)
             print("Schreibabschluss nicht bestätigt; eine vorhandene Zieldatei wurde nicht "
                   "überschrieben, eine neu angelegte Datei kann unvollständig sein.", file=sys.stderr)

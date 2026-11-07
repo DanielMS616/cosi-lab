@@ -86,7 +86,22 @@ Aus dem Projektverzeichnis lassen sich die Beispieldaten direkt auswerten und di
 .venv/bin/python cosi.py --help
 ```
 
-`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen ohne zusätzliche Rundung auf stdout. Ohne Speicheroption erscheinen sie erst nach erfolgreicher Verarbeitung und gegebenenfalls erfolgreichem Logabschluss; ein angeforderter Modellbericht folgt gekennzeichnet danach. Fehler erscheinen auf stderr, ohne Erfolgsbericht. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format-, Analyse-, Modell-, Speicher- oder Protokollierungsfehler, `2` für ungültige Kommandozeilenargumente. Ohne `--save-report` werden keine Ergebnisdateien geschrieben und keine Freigaben abgefragt.
+`--threshold` ist optional (Standard: `60.0`) und muss eine endliche Zahl sein. Kennzahlen erscheinen ohne zusätzliche Rundung auf stdout. Ohne Speicheroption erscheinen sie erst nach erfolgreicher Verarbeitung und gegebenenfalls erfolgreichem Logabschluss; ein angeforderter Modellbericht folgt gekennzeichnet danach. Fehler erscheinen auf stderr, ohne Erfolgsbericht. Rückgabecodes: `0` für Erfolg oder Hilfe, `1` für Datei-, Format-, Analyse-, Modell-, Speicher- oder Protokollierungsfehler, `2` für ungültige Kommandozeilenargumente. Ohne `--save-report` und `--database` werden keine Ergebnisdateien geschrieben; nur `--save-report` fragt eine Freigabe ab.
+
+Mit `--database PATH` speichert die CLI einen erfolgreichen Import samt Analyse zusätzlich in SQLite. Ein neuer Pfad wird initialisiert; an eine bestehende kompatible Cosi-Datenbank wird je Aufruf ein neuer Lauf angehängt. Beispiel mit zwei Auswertungen in derselben Datenbank:
+
+```bash
+.venv/bin/python cosi.py examples/temperature_sample.csv --database data/cli-runs.sqlite3
+.venv/bin/python cosi.py examples/temperature_sample.csv --threshold 65 --database data/cli-runs.sqlite3
+```
+
+Jeder Lauf enthält einen `runs`-Datensatz sowie zwei verknüpfte Artefakte: den absoluten CSV-Dateiverweis mit SHA-256 und Bytezahl und das vollständige Analyseergebnis als JSON. Der Schwellenwert steht in `runs.settings_json`; `simulation` ist `false`, da die Auswertung real und ohne Modell erfolgt. Es entstehen weder Modellaufruf noch gespeicherter Bericht oder Export. `--database` zusammen mit `--model-report` oder `--save-report` wird vor Verarbeitung und Dateierstellung mit Rückgabecode `2` abgelehnt. Die bisherigen Aufrufe dieser Optionen funktionieren weiterhin ohne `--database`.
+
+Vor jedem Einfügen prüft der Speicherbaustein die Cosi-Kennung, Schemaversion und die Tabellen-, Index- und Triggerdefinitionen gegen `db/schema.sql`. Fremde Datenbanken, bestehende leere Dateien, unbekannte Versionen und abweichende Schemata werden ohne Einfügen abgelehnt; automatische Migrationen gibt es nicht. Der Vergleich akzeptiert bewusst nur das mitgelieferte Schema. Fremdschlüssel und rekursive Trigger sind auf jeder Verbindung aktiv. Jeder Lauf wird in einer Transaktion geschrieben: Fehler beim Einfügen oder Commit rollen sämtliche Datensätze dieses Laufs zurück, vorhandene Läufe bleiben erhalten. Bei einer neu angelegten Datenbank kann das initialisierte Schema zurückbleiben. Die CSV wird nur referenziert; ihre Verfügbarkeit nach dem Lauf ist nicht durch die Datenbank gesichert.
+
+Die Terminalausgabe bleibt auch mit `--database` die normale Kennzahlenausgabe und erfolgt erst nach erfolgreicher Speicherung und Logabschluss. `--log-dir` ist kombinierbar und verwendet dieselbe Lauf-ID; zusätzlich wird der Schritt `database_save` protokolliert. Die Datenbank-Laufdauer umfasst die Verarbeitung vor der Speicherung. Scheitert die getrennte JSONL-Protokollierung nach erfolgreichem Datenbank-Commit, bleibt der vollständige Lauf gespeichert; die CLI meldet dies ausdrücklich und endet mit Code `1`. Ohne `--database` gibt es keinen SQLite-Zugriff. Datenbanken unter `/data/` bleiben lokal und werden von Git ignoriert.
+
+Die Abfrage [db/analysis_query.sql](db/analysis_query.sql) zeigt die CSV-/Analyse-Verknüpfung für beide Läufe. Sie kann nach erneutem Öffnen mit derselben Python-Leseanleitung wie die Demo-Abfrage unten ausgeführt werden; dafür Datenbankpfad und SQL-Datei auf `data/cli-runs.sqlite3` und `db/analysis_query.sql` setzen.
 
 Ohne `--model-report` bleibt der Aufruf vollständig offline. Nur diese Option aktiviert die OpenAI-Berichtserstellung und benötigt `OPENAI_API_KEY` in der Umgebung. Übermittelt werden ausschließlich Kennzahlen und derselbe validierte Schwellenwert wie bei der Analyse, keine Rohdaten oder Dateipfade. Beispiel für einen ausdrücklich angeforderten API-Aufruf:
 
@@ -186,7 +201,7 @@ Bereits geschriebene Nachweise bleiben bei Abbruch erhalten; ein Start ohne Absc
 
 ## Offline-Demolauf mit SQLite
 
-Der separate Demolauf verwendet die Beispiel-CSV, den bestehenden Import, die Temperaturauswertung mit Schwellenwert `60.0` und die bestehende Berichtsfunktion. Er benötigt weder API-Schlüssel noch Netzwerk. Der simulierte Generator erfasst den tatsächlich erzeugten Prompt und liefert ein festes `OpenAITextResult`; ein Text-Wrapper verbindet ihn mit der unveränderten Berichtsschnittstelle. Die bestehende CLI `cosi.py` bleibt unverändert.
+Der separate Demolauf verwendet die Beispiel-CSV, den bestehenden Import, die Temperaturauswertung mit Schwellenwert `60.0` und die bestehende Berichtsfunktion. Er benötigt weder API-Schlüssel noch Netzwerk. Der simulierte Generator erfasst den tatsächlich erzeugten Prompt und liefert ein festes `OpenAITextResult`; ein Text-Wrapper verbindet ihn mit der unveränderten Berichtsschnittstelle. Der separate Einstieg `sqlite_demo.py` besteht weiterhin neben der CLI-Speicheroption `--database`.
 
 Ein Datenbankpfad muss ausdrücklich angegeben werden und darf noch nicht existieren. Beispiel aus dem Projektverzeichnis:
 

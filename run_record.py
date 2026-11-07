@@ -7,6 +7,24 @@ from openai_text import OpenAITextResult
 
 
 @dataclass(frozen=True)
+class AnalysisRun:
+    """Carry a successful CSV/analysis run without model or database objects.
+
+    run_id may also identify the JSONL log. UTC times use microseconds; duration
+    measures processing before database storage, not the database transaction.
+    """
+
+    run_id: str
+    input_path: Path
+    input_bytes: bytes
+    analysis: dict[str, int | float]
+    threshold: float
+    started_at: str
+    finished_at: str
+    duration_ms: float
+
+
+@dataclass(frozen=True)
 class CompletedRun:
     """Describe one successful simulated run without database-specific fields.
 
