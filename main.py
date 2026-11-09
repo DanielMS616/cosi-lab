@@ -3,6 +3,8 @@ import argparse
 from temperature import count_above_threshold
 from temperature import count_missing
 from temperature_csv import read_temperatures
+from temperature_prompt import build_temperature_prompt
+
 
 # Der Parser beschreibt, welche Angaben das Programm beim Start erwartet.
 parser = argparse.ArgumentParser(description="Zählt Temperaturüberschreitungen.")
@@ -18,6 +20,11 @@ parser.add_argument(
     "--show-temperatures",
     action="store_true",
     help="Zeigt die eingelesenen Temperaturwerte an.",
+)
+
+parser.add_argument(
+    "--show-prompt",
+    action="store_true",
 )
 
 # Lies die Terminalargumente ein und übernimm den angegebenen Dateipfad.
@@ -42,11 +49,25 @@ else:
 
     exceedances = count_above_threshold(temperatures, threshold)
 
-    print(f"Messwerte insgesamt: {len(temperatures)}")
+    total_temperatures = len(temperatures)
+
+    valid_temperatures = total_temperatures - missing_temperatures
+
+    print(f"Messwerte insgesamt: {total_temperatures}")
 
     print(f"Fehlende Messwerte: {missing_temperatures}")
 
-    print(f"Gültige Messwerte: {len(temperatures) - missing_temperatures}")
+    print(f"Gültige Messwerte: {valid_temperatures}")
 
     print(f"Messwerte über {threshold} °C: {exceedances}")
 
+    if args.show_prompt:
+        prompt = build_temperature_prompt(
+            total_count=total_temperatures,
+            valid_count=valid_temperatures,
+            missing_count=missing_temperatures,
+            threshold=threshold,
+            exceedances=exceedances,
+        )
+        print("\nPrompt:")
+        print(prompt)
