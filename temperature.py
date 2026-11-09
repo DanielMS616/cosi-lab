@@ -7,3 +7,11 @@ def count_above_threshold(numbers, threshold):
             count += 1
 
     return  count
+
+def count_missing(numbers):
+    count = 0
+    for number in numbers:
+        if number is None:
+            count += 1
+
+    return count

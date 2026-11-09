@@ -1,6 +1,7 @@
 import argparse
 
 from temperature import count_above_threshold
+from temperature import count_missing
 from temperature_csv import read_temperatures
 
 # Der Parser beschreibt, welche Angaben das Programm beim Start erwartet.
@@ -37,5 +38,15 @@ else:
     if args.show_temperatures:
         print(temperatures)
 
-    # Die Anzahl wird unabhängig vom Schalter ausgegeben.
-    print(count_above_threshold(temperatures, threshold))
+    missing_temperatures = count_missing(temperatures)
+
+    exceedances = count_above_threshold(temperatures, threshold)
+
+    print(f"Messwerte insgesamt: {len(temperatures)}")
+
+    print(f"Fehlende Messwerte: {missing_temperatures}")
+
+    print(f"Gültige Messwerte: {len(temperatures) - missing_temperatures}")
+
+    print(f"Messwerte über {threshold} °C: {exceedances}")
+
