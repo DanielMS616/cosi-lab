@@ -31,6 +31,7 @@ try:
 except ValueError as error:
     # Bei einem ungültigen Messwert zeigen wir nur die Meldung des CSV-Imports.
     print(error)
+    raise SystemExit(1)
 else:
     # Zeige bei Bedarf, welche Werte aus der CSV eingelesen wurden.
     if args.show_temperatures:
