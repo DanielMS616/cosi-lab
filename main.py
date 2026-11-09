@@ -27,6 +27,12 @@ parser.add_argument(
     action="store_true",
 )
 
+parser.add_argument(
+    "--gpt",
+    action="store_true",
+    help="Lässt GPT die berechneten Temperaturkennzahlen zusammenfassen.",
+)
+
 # Lies die Terminalargumente ein und übernimm den angegebenen Dateipfad.
 args = parser.parse_args()
 path = args.path
@@ -61,7 +67,8 @@ else:
 
     print(f"Messwerte über {threshold} °C: {exceedances}")
 
-    if args.show_prompt:
+    # Vorschau und GPT-Aufruf verwenden denselben fertigen Prompt.
+    if args.show_prompt or args.gpt:
         prompt = build_temperature_prompt(
             total_count=total_temperatures,
             valid_count=valid_temperatures,
@@ -69,5 +76,15 @@ else:
             threshold=threshold,
             exceedances=exceedances,
         )
-        print("\nPrompt:")
-        print(prompt)
+
+        if args.show_prompt:
+            print("\nPrompt:")
+            print(prompt)
+
+        if args.gpt:
+            # Lade das SDK erst, wenn der GPT-Aufruf ausdrücklich gewählt wurde.
+            from model_gpt import generate_gpt_report
+
+            report = generate_gpt_report(prompt)
+            print("\nGPT-Bericht:")
+            print(report)
