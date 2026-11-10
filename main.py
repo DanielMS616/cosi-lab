@@ -27,11 +27,10 @@ parser.add_argument(
     action="store_true",
 )
 
-parser.add_argument(
-    "--gpt",
-    action="store_true",
-    help="Lässt GPT die berechneten Temperaturkennzahlen zusammenfassen.",
-)
+# Pro Aufruf ist höchstens ein Modell erlaubt.
+model_options = parser.add_mutually_exclusive_group()
+model_options.add_argument("--gpt", action="store_true", help="Erstellt einen GPT-Bericht.")
+model_options.add_argument("--gemini", action="store_true", help="Erstellt einen Gemini-Bericht.")
 
 # Lies die Terminalargumente ein und übernimm den angegebenen Dateipfad.
 args = parser.parse_args()
@@ -68,7 +67,7 @@ else:
     print(f"Messwerte über {threshold} °C: {exceedances}")
 
     # Vorschau und GPT-Aufruf verwenden denselben fertigen Prompt.
-    if args.show_prompt or args.gpt:
+    if args.show_prompt or args.gpt or args.gemini:
         prompt = build_temperature_prompt(
             total_count=total_temperatures,
             valid_count=valid_temperatures,
@@ -87,4 +86,11 @@ else:
 
             report = generate_gpt_report(prompt)
             print("\nGPT-Bericht:")
+            print(report)
+
+        elif args.gemini:
+            from model_gemini import generate_gemini_report
+
+            report = generate_gemini_report(prompt)
+            print("\nGemini-Bericht:")
             print(report)
