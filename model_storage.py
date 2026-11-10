@@ -29,10 +29,20 @@ def initialize_database(database_path):
                 response_text TEXT NOT NULL,
                 duration_ms INTEGER,
                 input_tokens INTEGER,
-                output_tokens INTEGER
+                output_tokens INTEGER,
+                requested_at_utc TEXT
             )
             """
         )
+
+        # PRAGMA table_info liest die vorhandenen Spalten. CREATE TABLE IF NOT EXISTS
+        # verändert eine bereits vorhandene Tabelle nicht; deshalb braucht sie einmalig
+        # das ALTER TABLE. Alte Einträge bleiben erhalten und bekommen dort NULL.
+        columns = {
+            column[1] for column in connection.execute("PRAGMA table_info(model_runs)")
+        }
+        if "requested_at_utc" not in columns:
+            connection.execute("ALTER TABLE model_runs ADD COLUMN requested_at_utc TEXT")
 
         # Änderungen dauerhaft in die Datenbank schreiben.
         connection.commit()
@@ -51,6 +61,7 @@ def save_model_run(
     duration_ms=None,
     input_tokens=None,
     output_tokens=None,
+    requested_at_utc=None,
 ):
     """Speichert einen erfolgreichen Modelllauf und gibt seine ID zurück."""
 
@@ -67,9 +78,10 @@ def save_model_run(
                 response_text,
                 duration_ms,
                 input_tokens,
-                output_tokens
+                output_tokens,
+                requested_at_utc
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 model,
@@ -80,6 +92,7 @@ def save_model_run(
                 duration_ms,
                 input_tokens,
                 output_tokens,
+                requested_at_utc,
             ),
         )
 

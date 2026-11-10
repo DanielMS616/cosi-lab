@@ -1,5 +1,6 @@
 import argparse
 
+from datetime import datetime, timezone
 from temperature import count_above_threshold
 from temperature import count_missing
 from temperature_csv import read_temperatures
@@ -85,6 +86,8 @@ else:
             from model_gpt import generate_gpt_report
             from model_storage import initialize_database, save_model_run
 
+            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
             result = generate_gpt_report(prompt)
             report = result["text"]
 
@@ -102,6 +105,7 @@ else:
                 duration_ms=result["processing_ms"],
                 input_tokens=result["input_tokens"],
                 output_tokens=result["output_tokens"],
+                requested_at_utc=requested_at_utc,
             )
             print(f"Modelllauf gespeichert: ID {run_id}")
 
@@ -112,6 +116,8 @@ else:
         elif args.gemini:
             from model_gemini import GEMINI_MODEL, generate_gemini_report
             from model_storage import initialize_database, save_model_run
+
+            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
             result = generate_gemini_report(prompt)
             report = result["text"]
@@ -130,6 +136,7 @@ else:
                 duration_ms=result["processing_ms"],
                 input_tokens=result["input_tokens"],
                 output_tokens=result["output_tokens"],
+                requested_at_utc=requested_at_utc,
             )
 
             print(f"Modelllauf gespeichert: ID {run_id}")

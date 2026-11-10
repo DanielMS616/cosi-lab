@@ -6,21 +6,20 @@ Python berechnet die Kennzahlen. Das Modell bekommt den daraus erzeugten Prompt 
 
 ## Schnellstart
 
-Führe die Befehle im Projektordner aus. Für die CSV-Auswertung und die Promptvorschau reichen Python und seine Standardbibliothek.
+Führe die Befehle im Projektordner aus. Falls noch keine virtuelle Umgebung existiert, lege sie einmal mit `python3 -m venv .venv` an. Verwende danach `.venv/bin/python` für alle Beispiele. So verwendest du auch bei einem späteren Modellaufruf den Interpreter, in dessen Umgebung die Projektpakete installiert sind.
 
 ```bash
-python3 main.py examples/temperature_sample.csv
-python3 main.py examples/temperature_sample.csv --threshold 65 --show-temperatures --show-prompt
+.venv/bin/python main.py examples/temperature_sample.csv
+.venv/bin/python main.py examples/temperature_sample.csv --threshold 65 --show-temperatures --show-prompt
 ```
 
-Die Beispieldatei enthält vier Einträge: drei gültige Werte und eine fehlende Messung. Bei der Standardschwelle von 60 °C liegt ein Wert darüber; bei 65 °C sind es null, weil Gleichheit nicht als Überschreitung zählt. `--show-temperatures` zeigt die eingelesene Liste, `--show-prompt` den fertigen Auftrag an das Modell. Beide Schalter funktionieren ohne API-Aufruf.
+Die Beispieldatei enthält vier Einträge: drei gültige Werte und eine fehlende Messung. Bei der Standardschwelle von 60 °C liegt ein Wert darüber; bei 65 °C sind es null, weil Gleichheit nicht als Überschreitung zählt. `--show-temperatures` zeigt die eingelesene Liste, `--show-prompt` den fertigen Auftrag an das Modell. Beide Schalter funktionieren ohne API-Aufruf und zusätzliche Python-Pakete.
 
 ### Modellberichte und SQLite
 
-Für die Modellaufrufe lege eine virtuelle Umgebung an und installiere die Abhängigkeiten:
+Für die Modellaufrufe installiere die Abhängigkeiten in der virtuellen Umgebung:
 
 ```bash
-python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 ```
 
@@ -31,13 +30,15 @@ Trage in die lokale Datei `.env` neben `main.py` den Schlüssel für den gewüns
 .venv/bin/python main.py examples/temperature_sample.csv --gemini
 ```
 
-Wähle pro Aufruf höchstens ein Modell. Ein erfolgreicher Modelllauf wird in `data/model_runs.sqlite3` gespeichert. GPT übernimmt die von OpenAI gemeldete Verarbeitungszeit, falls der Header `openai-processing-ms` vorhanden und lesbar ist. Bei Gemini bleibt `duration_ms` auf `NULL`. Fehlende Tokenzahlen bleiben ebenfalls `NULL`; eine lokale Zeitmessung gibt es bisher nicht.
+Wähle pro Aufruf höchstens ein Modell. Ein erfolgreicher Modelllauf wird in `data/model_runs.sqlite3` gespeichert. `requested_at_utc` hält fest, wann das Programm die Modellfunktion aufgerufen hat. Dieser UTC-Zeitstempel stammt von der Uhr des Rechners; bei älteren Läufen bleibt er `NULL`.
 
-Mit der `sqlite3`-Kommandozeile kannst du den jüngsten Eintrag ansehen:
+GPT übernimmt die von OpenAI gemeldete Verarbeitungszeit, falls der Header `openai-processing-ms` vorhanden und lesbar ist. Bei Gemini bleibt `duration_ms` auf `NULL`. Fehlende Tokenzahlen bleiben ebenfalls `NULL`; eine lokal gemessene Laufzeit gibt es bisher nicht.
+
+Nach einem Modelllauf kannst du den jüngsten Eintrag mit der `sqlite3`-Kommandozeile ansehen:
 
 ```bash
 sqlite3 -readonly -header -column -nullvalue NULL data/model_runs.sqlite3 \
-  'SELECT id, model, duration_ms, input_tokens, output_tokens
+  'SELECT id, model, requested_at_utc, duration_ms, input_tokens, output_tokens
    FROM model_runs ORDER BY id DESC LIMIT 1;'
 ```
 
@@ -56,7 +57,7 @@ sqlite3 -readonly -header -column -nullvalue NULL data/model_runs.sqlite3 \
 | [`temperature_prompt.py`](temperature_prompt.py) | Verbindet einen festen deutschen Schreibauftrag mit den berechneten Kennzahlen. So können beide Anbieter denselben Prompt erhalten, und mit `--show-prompt` lässt er sich vorher ansehen. |
 | [`model_gpt.py`](model_gpt.py) | Sendet den Prompt mit dem OpenAI-SDK an `gpt-4o-mini`. Gibt den Bericht, verfügbare Eingabe- und Ausgabetoken sowie die gemeldete Verarbeitungszeit zurück. |
 | [`model_gemini.py`](model_gemini.py) | Sendet den Prompt mit dem Google-SDK an `gemini-3.5-flash-lite`. Gibt Bericht und verfügbare Tokenzahlen zurück; separat gemeldete Denk-Token werden dabei nicht zu den Ausgabetoken addiert. |
-| [`model_storage.py`](model_storage.py) | Legt die SQLite-Tabelle `model_runs` bei Bedarf an. Speichert je Modelllauf den Modellnamen, den CSV-Pfad, die Schwelle, Prompt und Antwort sowie verfügbare Metadaten und gibt die Lauf-ID zurück. |
+| [`model_storage.py`](model_storage.py) | Legt die SQLite-Tabelle `model_runs` an und ergänzt in vorhandenen Datenbanken bei Bedarf die Spalte für den Aufrufzeitpunkt. Speichert Modellname, CSV-Pfad, Schwelle, Prompt, Antwort, UTC-Zeitstempel und verfügbare API-Metadaten und gibt die Lauf-ID zurück. |
 
 ### Beispieldaten
 
