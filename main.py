@@ -83,8 +83,28 @@ else:
         if args.gpt:
             # Lade das SDK erst, wenn der GPT-Aufruf ausdrücklich gewählt wurde.
             from model_gpt import generate_gpt_report
+            from model_storage import initialize_database, save_model_run
 
-            report = generate_gpt_report(prompt)
+            result = generate_gpt_report(prompt)
+            report = result["text"]
+
+            # Erst nach erfolgreicher GPT-Antwort speichere ich den Lauf.
+            database_path = "data/model_runs.sqlite3"
+            initialize_database(database_path)
+
+            run_id = save_model_run(
+                database_path=database_path,
+                model="gpt-4o-mini",
+                csv_path=args.path,
+                threshold=threshold,
+                prompt=prompt,
+                response_text=report,
+                duration_ms=result["processing_ms"],
+                input_tokens=result["input_tokens"],
+                output_tokens=result["output_tokens"],
+            )
+            print(f"Modelllauf gespeichert: ID {run_id}")
+
             print("\nGPT-Bericht:")
             print(report)
 
