@@ -32,14 +32,31 @@ Trage in die lokale Datei `.env` neben `main.py` den Schlüssel für den gewüns
 
 Wähle pro Aufruf höchstens ein Modell. Ein erfolgreicher Modelllauf wird in `data/model_runs.sqlite3` gespeichert. `requested_at_utc` hält fest, wann das Programm die Modellfunktion aufgerufen hat. Dieser UTC-Zeitstempel stammt von der Uhr des Rechners; bei älteren Läufen bleibt er `NULL`.
 
-GPT übernimmt die von OpenAI gemeldete Verarbeitungszeit, falls der Header `openai-processing-ms` vorhanden und lesbar ist. Bei Gemini bleibt `duration_ms` auf `NULL`. Fehlende Tokenzahlen bleiben ebenfalls `NULL`; eine lokal gemessene Laufzeit gibt es bisher nicht.
+GPT übernimmt die von OpenAI gemeldete Verarbeitungszeit, falls der Header `openai-processing-ms` vorhanden und lesbar ist. Bei Gemini bleibt `duration_ms` auf `NULL`. `client_duration_ms` ist die lokal gemessene Zeit vom Aufruf der Modellfunktion bis zu ihrer Rückkehr, einschließlich SDK und Netzwerk. Fehlende Werte bleiben `NULL`.
 
 Nach einem Modelllauf kannst du den jüngsten Eintrag mit der `sqlite3`-Kommandozeile ansehen:
 
 ```bash
 sqlite3 -readonly -header -column -nullvalue NULL data/model_runs.sqlite3 \
-  'SELECT id, model, requested_at_utc, duration_ms, input_tokens, output_tokens
+  'SELECT id, model, requested_at_utc, duration_ms, client_duration_ms,
+          input_tokens, output_tokens
    FROM model_runs ORDER BY id DESC LIMIT 1;'
+```
+
+### Gespeicherten Lauf anzeigen und offline testen
+
+Setze statt `12` die ID ein, die beim Speichern ausgegeben wurde:
+
+```bash
+.venv/bin/python show_model_run.py 12
+```
+
+Die Ansicht öffnet die Datenbank nur zum Lesen und zeigt den ursprünglichen Prompt, die Antwort und die Metadaten. Fehlende Werte erscheinen als „nicht erfasst“. Mit `--database PFAD` kannst du eine andere SQLite-Datei wählen.
+
+Die Speichertests verwenden temporäre Datenbanken und brauchen keine API-Schlüssel:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
 ## Alle versionierten Dateien
@@ -57,7 +74,14 @@ sqlite3 -readonly -header -column -nullvalue NULL data/model_runs.sqlite3 \
 | [`temperature_prompt.py`](temperature_prompt.py) | Verbindet einen festen deutschen Schreibauftrag mit den berechneten Kennzahlen. So können beide Anbieter denselben Prompt erhalten, und mit `--show-prompt` lässt er sich vorher ansehen. |
 | [`model_gpt.py`](model_gpt.py) | Sendet den Prompt mit dem OpenAI-SDK an `gpt-4o-mini`. Gibt den Bericht, verfügbare Eingabe- und Ausgabetoken sowie die gemeldete Verarbeitungszeit zurück. |
 | [`model_gemini.py`](model_gemini.py) | Sendet den Prompt mit dem Google-SDK an `gemini-3.5-flash-lite`. Gibt Bericht und verfügbare Tokenzahlen zurück; separat gemeldete Denk-Token werden dabei nicht zu den Ausgabetoken addiert. |
-| [`model_storage.py`](model_storage.py) | Legt die SQLite-Tabelle `model_runs` an und ergänzt in vorhandenen Datenbanken bei Bedarf die Spalte für den Aufrufzeitpunkt. Speichert Modellname, CSV-Pfad, Schwelle, Prompt, Antwort, UTC-Zeitstempel und verfügbare API-Metadaten und gibt die Lauf-ID zurück. |
+| [`model_storage.py`](model_storage.py) | Legt die SQLite-Tabelle `model_runs` an und ergänzt fehlende Spalten bei Bedarf. Speichert Modellläufe und kann sie anhand ihrer ID wieder auslesen. |
+| [`show_model_run.py`](show_model_run.py) | Zeigt einen gespeicherten Lauf per ID im Terminal an. Gibt Prompt, Antwort und Metadaten aus. |
+
+### Tests
+
+| Datei | Inhalt und Aufgabe |
+| --- | --- |
+| [`tests/test_model_storage.py`](tests/test_model_storage.py) | Prüft mit temporären SQLite-Dateien das Speichern und Auslesen nach ID. Prüft auch, dass fehlende Datenbanken beim Lesen nicht angelegt werden. |
 
 ### Beispieldaten
 
@@ -74,6 +98,7 @@ sqlite3 -readonly -header -column -nullvalue NULL data/model_runs.sqlite3 \
 | [`docs/aufbau-hardware.md`](docs/aufbau-hardware.md) | Zeigt im Mermaid-Diagramm den dokumentierten Hardwarestand vom 31.10.2026. Enthält die Komponenten, Laufwerke und die damals offenen Punkte bei Kühlung und Start. |
 | [`docs/journal/2026-11-09.md`](docs/journal/2026-11-09.md) | Hält die ersten Schritte fest: Zählen, CSV-Import, Fehlermeldungen, Terminaloptionen und die Ausgabe der Kennzahlen. Dokumentiert außerdem den Prompt und den ersten erfolgreichen GPT-Aufruf. |
 | [`docs/journal/2026-11-10.md`](docs/journal/2026-11-10.md) | Dokumentiert die Gemini-Anbindung und den ersten Vergleich der Modellberichte. Hält die Tests zur SQLite-Speicherung und die ausgelesenen Metadaten für GPT und Gemini fest. |
+| [`docs/journal/2026-11-11.md`](docs/journal/2026-11-11.md) | Dokumentiert den gemeinsamen Speicherblock, die lokale Laufzeitmessung und die Testläufe mit GPT und Gemini. |
 
 ## Lokale Dateien und Ordner
 

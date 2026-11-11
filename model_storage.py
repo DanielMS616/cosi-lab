@@ -109,3 +109,28 @@ def save_model_run(
         return cursor.lastrowid
     finally:
         connection.close()
+
+
+def load_model_run(database_path, run_id):
+    """Liest einen Lauf anhand seiner ID oder gibt None zurück."""
+
+    # mode=ro öffnet nur eine vorhandene Datenbank und erlaubt keine Schreibzugriffe.
+    database_uri = Path(database_path).resolve().as_uri() + "?mode=ro"
+    connection = sqlite3.connect(database_uri, uri=True)
+
+    try:
+        # So können wir die Felder über ihre Spaltennamen ansprechen.
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT id, model, csv_path, threshold, prompt, response_text,
+                   duration_ms, input_tokens, output_tokens, requested_at_utc,
+                   client_duration_ms
+            FROM model_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        connection.close()
