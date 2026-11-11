@@ -30,7 +30,8 @@ def initialize_database(database_path):
                 duration_ms INTEGER,
                 input_tokens INTEGER,
                 output_tokens INTEGER,
-                requested_at_utc TEXT
+                requested_at_utc TEXT,
+                client_duration_ms INTEGER
             )
             """
         )
@@ -43,6 +44,9 @@ def initialize_database(database_path):
         }
         if "requested_at_utc" not in columns:
             connection.execute("ALTER TABLE model_runs ADD COLUMN requested_at_utc TEXT")
+
+        if "client_duration_ms" not in columns:
+            connection.execute("ALTER TABLE model_runs ADD COLUMN client_duration_ms INTEGER")
 
         # Änderungen dauerhaft in die Datenbank schreiben.
         connection.commit()
@@ -62,6 +66,7 @@ def save_model_run(
     input_tokens=None,
     output_tokens=None,
     requested_at_utc=None,
+    client_duration_ms=None,
 ):
     """Speichert einen erfolgreichen Modelllauf und gibt seine ID zurück."""
 
@@ -79,9 +84,10 @@ def save_model_run(
                 duration_ms,
                 input_tokens,
                 output_tokens,
-                requested_at_utc
+                requested_at_utc,
+                client_duration_ms
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 model,
@@ -93,6 +99,7 @@ def save_model_run(
                 input_tokens,
                 output_tokens,
                 requested_at_utc,
+                client_duration_ms,
             ),
         )
 

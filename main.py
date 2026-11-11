@@ -1,5 +1,6 @@
 import argparse
 
+from time import perf_counter
 from datetime import datetime, timezone
 from temperature import count_above_threshold
 from temperature import count_missing
@@ -81,23 +82,38 @@ else:
             print("\nPrompt:")
             print(prompt)
 
-        if args.gpt:
-            # Lade das SDK erst, wenn der GPT-Aufruf ausdrücklich gewählt wurde.
-            from model_gpt import generate_gpt_report
+        if args.gpt or args.gemini:
             from model_storage import initialize_database, save_model_run
 
-            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            # Der Anbieter bestimmt nur Funktion, Modellname und Berichtstitel.
+            if args.gpt:
+                from model_gpt import generate_gpt_report
 
-            result = generate_gpt_report(prompt)
+                generate_report = generate_gpt_report
+                model_name = "gpt-4o-mini"
+                report_title = "GPT-Bericht"
+            else:
+                from model_gemini import GEMINI_MODEL, generate_gemini_report
+
+                generate_report = generate_gemini_report
+                model_name = GEMINI_MODEL
+                report_title = "Gemini-Bericht"
+
+            # UTC hält den Zeitpunkt fest; perf_counter misst die verstrichene Zeit.
+            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            # Die Messung beginnt direkt vor generate_report(prompt) und endet sobald diese Funktion zurückkehrt.
+            started_at = perf_counter()
+            result = generate_report(prompt)
+            # Direkt nach der Rückkehr liest perf_counter() den Zähler ein zweites Mal.
+            # Die Differenz ist die verstrichene Zeit in Sekunden. * 1_000 macht daraus Millisekunden
+            client_duration_ms = round((perf_counter() - started_at) * 1_000)
             report = result["text"]
 
-            # Erst nach erfolgreicher GPT-Antwort speichere ich den Lauf.
             database_path = "data/model_runs.sqlite3"
             initialize_database(database_path)
-
             run_id = save_model_run(
                 database_path=database_path,
-                model="gpt-4o-mini",
+                model=model_name,
                 csv_path=args.path,
                 threshold=threshold,
                 prompt=prompt,
@@ -106,40 +122,9 @@ else:
                 input_tokens=result["input_tokens"],
                 output_tokens=result["output_tokens"],
                 requested_at_utc=requested_at_utc,
-            )
-            print(f"Modelllauf gespeichert: ID {run_id}")
-
-            print("\nGPT-Bericht:")
-            print(report)
-
-
-        elif args.gemini:
-            from model_gemini import GEMINI_MODEL, generate_gemini_report
-            from model_storage import initialize_database, save_model_run
-
-            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-            result = generate_gemini_report(prompt)
-            report = result["text"]
-
-            # Speichere den Lauf erst, wenn ein Bericht vorliegt.
-            database_path = "data/model_runs.sqlite3"
-            initialize_database(database_path)
-
-            run_id = save_model_run(
-                database_path=database_path,
-                model=GEMINI_MODEL,
-                csv_path=args.path,
-                threshold=threshold,
-                prompt=prompt,
-                response_text=report,
-                duration_ms=result["processing_ms"],
-                input_tokens=result["input_tokens"],
-                output_tokens=result["output_tokens"],
-                requested_at_utc=requested_at_utc,
+                client_duration_ms=client_duration_ms,
             )
 
             print(f"Modelllauf gespeichert: ID {run_id}")
-
-            print("\nGemini-Bericht:")
+            print(f"\n{report_title}:")
             print(report)
