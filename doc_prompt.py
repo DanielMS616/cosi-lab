@@ -1,3 +1,6 @@
+import re
+
+
 def build_doc_prompt(question, hit):
     """Baut einen Prompt aus der Frage und einer gefundenen Textstelle."""
 
@@ -41,3 +44,22 @@ def build_multi_doc_prompt(question, hits):
         f"Frage: {question}\n\n"
         + "\n\n".join(sections)
     )
+
+
+def check_citations(answer, hits):
+    """Vergleicht erkannte Quellenangaben mit den angebotenen Fundstellen."""
+
+    # Baue aus den Suchtreffern dieselben Quellenangaben wie im Prompt.
+    allowed = {
+        f"{hit['path']}:{hit['start_line']}-{hit['end_line']}"
+        for hit in hits
+    }
+
+    # Suche nach Angaben wie docs/aufbau-hardware.md:3-5.
+    # Ein Set entfernt doppelte Zitate; sorted() sorgt für eine feste Reihenfolge.
+    cited = sorted(set(re.findall(r"[\w./-]+\.md:\d+-\d+", answer)))
+
+    return {
+        "cited": cited,
+        "unknown": [source for source in cited if source not in allowed],
+    }

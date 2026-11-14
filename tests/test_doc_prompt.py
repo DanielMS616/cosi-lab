@@ -134,3 +134,37 @@ class DocPromptTests(unittest.TestCase):
                 f"Fundstelle 2: {hardware}:1-1\nAusschnitt:\n{hardware_text}",
                 multi.stdout,
             )
+
+
+    def test_gpt_output_warns_about_a_citation_not_in_the_prompt(self):
+        """Nur die abweichende Fundstelle erscheint in der Warnung."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "hardware.md"
+            path.write_text("CPU: Intel Core i5-8500\n", encoding="utf-8")
+
+            known = f"{path}:1-1"
+            unknown = f"{path}:1-4"
+
+            # Die API-Antwort ist absichtlich vollständig, enthält aber
+            # eine falsche Quellenangabe. So prüfen wir nur die Zitatwarnung.
+            fake_gpt = ModuleType("model_gpt")
+            fake_gpt.generate_gpt_report = Mock(return_value={
+                "text": f"CPU: Intel Core i5-8500. Quelle: {known}\n"
+                        f"Weitere Details: {unknown}",
+                "status": "completed",
+                "incomplete_reason": None,
+            })
+
+            argv = ["doc_search.py", str(path), "Welche CPU?", "--question", "--gpt"]
+            output = StringIO()
+            with (
+                patch.dict(sys.modules, {"model_gpt": fake_gpt}),
+                patch.object(sys, "argv", argv),
+                redirect_stdout(output),
+            ):
+                main()
+
+            # Prüfe die Warnliste, nicht nur das Vorkommen im Antworttext.
+            self.assertIn("Fundstellen, die nicht im Prompt standen:\n", output.getvalue())
+            self.assertIn(f"- {unknown}\n", output.getvalue())
+            self.assertNotIn(f"- {known}\n", output.getvalue())

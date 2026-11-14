@@ -2,7 +2,7 @@ import re
 import argparse
 
 from pathlib import Path
-from doc_prompt import build_doc_prompt, build_multi_doc_prompt
+from doc_prompt import build_doc_prompt, build_multi_doc_prompt, check_citations
 
 
 # Diese beiden Dateien durchsucht --project-docs vom Projektordner aus.
@@ -252,6 +252,19 @@ def main():
             print(f"\nAPI-Status: {result['status']}")
             if result["incomplete_reason"] is not None:
                 print(f"Grund für unvollständige Antwort: {result['incomplete_reason']}")
+
+            # Vergleiche die Zitate in der Antwort mit denselben Treffern,
+            # aus denen wir den Prompt gebaut haben.
+            citations = check_citations(result["text"], hits)
+
+            if citations["unknown"]:
+                print("Fundstellen, die nicht im Prompt standen:")
+                for source in citations["unknown"]:
+                    print(f"- {source}")
+            elif not citations["cited"]:
+                print("Keine Fundstelle in der Antwort erkannt.")
+            else:
+                print("Alle erkannten Fundstellen standen im Prompt.")
 
         return
 
