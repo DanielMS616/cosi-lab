@@ -5,6 +5,28 @@ from pathlib import Path
 from model_storage import load_model_run
 
 
+def build_report_text(run):
+    """Baut den vollständigen Exporttext aus einem gespeicherten Lauf."""
+
+    # Für den Bericht reicht der Dateiname. Der Pfad bleibt in der Laufansicht.
+    csv_name = Path(run["csv_path"]).name
+
+    # Ältere Läufe können vor der Einführung des Zeitstempels entstanden sein.
+    requested_at = run["requested_at_utc"]
+    if requested_at is None:
+        requested_at = "nicht erfasst"
+
+    return (
+        f"Temperaturbericht · Lauf {run['id']}\n"
+        f"Modell: {run['model']}\n"
+        f"CSV-Datei: {csv_name}\n"
+        f"Schwelle: {run['threshold']} °C\n"
+        f"Modellaufruf (UTC): {requested_at}\n"
+        "\nAntwort:\n"
+        f"{run['response_text']}"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Zeigt einen gespeicherten Modelllauf an.")
     parser.add_argument("run_id", type=int, help="ID des Modelllaufs")
@@ -54,6 +76,12 @@ def main():
         target = Path("reports") / f"model-run-{run['id']}.txt"
         print(f"\nVorgesehenes Exportziel: {target}")
 
+        # Einmal erzeugen, damit Vorschau und Datei denselben Text verwenden.
+        report_text = build_report_text(run)
+        print("\n--- Exportvorschau ---")
+        print(report_text)
+        print("--- Ende der Exportvorschau ---\n")
+
         answer = input("Bericht exportieren? [ja/nein]: ").strip().lower()
 
         if answer != "ja":
@@ -66,7 +94,7 @@ def main():
 
             # "x" erstellt eine neue Datei und schützt eine vorhandene Datei.
             with target.open("x", encoding="utf-8", newline="") as file:
-                file.write(run["response_text"])
+                file.write(report_text)
         except FileExistsError:
             parser.exit(1, f"Export abgebrochen: Ziel bereits belegt: {target}\n")
             # Zieldatei existiert bereits / reports existiert als Datei statt als Ordner

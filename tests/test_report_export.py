@@ -29,7 +29,7 @@ class ReportExportTests(unittest.TestCase):
         # Lege einen Beispiel-Modelllauf an. Dafür ist kein API-Aufruf nötig.
         initialize_database(self.database)
         self.run_id = save_model_run(
-            self.database, "demo", "beispiel.csv", 60, "Beispielprompt", self.answer
+            self.database, "demo", "examples/beispiel.csv", 60, "Beispielprompt", self.answer
         )
         self.target = self.work_dir / "reports" / f"model-run-{self.run_id}.txt"
 
@@ -47,14 +47,27 @@ class ReportExportTests(unittest.TestCase):
             capture_output=True,  # Normale Ausgabe in stdout, Fehler in stderr.
         )
 
-    def test_confirmation_exports_only_the_saved_answer(self):
-        """Nach 'ja' enthält die Datei exakt den gespeicherten Antworttext."""
+    def test_confirmation_exports_the_previewed_report(self):
+        """Nach 'ja' wird der vollständige Bericht aus der Vorschau gespeichert."""
         result = self.run_export("ja")
-
         self.assertEqual(result.returncode, 0, result.stderr)
-        # Der Vergleich der Bytes prüft UTF-8 und den genauen Inhalt.
-        # Auch ein zusätzliches Leerzeichen oder ein zusätzlicher Umbruch fällt auf.
-        self.assertEqual(self.target.read_bytes(), self.answer.encode("utf-8"))
+
+        # Formuliere die Erwartung unabhängig vom Programmcode.
+        # Der Testlauf hat keinen gespeicherten Aufrufzeitpunkt.
+        expected = (
+            f"Temperaturbericht · Lauf {self.run_id}\n"
+            "Modell: demo\n"
+            "CSV-Datei: beispiel.csv\n"
+            "Schwelle: 60 °C\n"
+            "Modellaufruf (UTC): nicht erfasst\n"
+            "\nAntwort:\n"
+            f"{self.answer}"
+        )
+
+        # Die Markierungen gehören zur Terminalansicht, nicht zur Datei.
+        preview = f"--- Exportvorschau ---\n{expected}\n--- Ende der Exportvorschau ---"
+        self.assertIn(preview, result.stdout)
+        self.assertEqual(self.target.read_bytes(), expected.encode("utf-8"))
 
     def test_decline_does_not_create_export_directory(self):
         """Nach 'nein' endet das Programm regulär und legt keinen Ordner an."""
