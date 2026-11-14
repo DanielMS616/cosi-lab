@@ -18,6 +18,9 @@ def question_to_terms(question):
     stop_words = {
         "wie", "was", "ist", "funktioniert", "der", "die", "das",
         "ein", "eine", "im", "in", "mit", "und", "auf",
+        # Der Projektname steht in mehreren Dokumenten. Er soll allein
+        # keinen Treffer auslösen, wenn das eigentliche Thema fehlt.
+        "cosi", "lab",
     }
 
     # findall() sammelt die Wörter in ihrer Reihenfolge. Bindestrich

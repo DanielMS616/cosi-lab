@@ -72,3 +72,23 @@ class DocSearchTests(unittest.TestCase):
             self.assertIsNotNone(hit)
             self.assertEqual(hit["matched_terms"], ["cpu"])
             self.assertEqual(hit["text"], "CPU: Intel Core i5-8500")
+
+
+    def test_project_name_alone_does_not_trigger_a_hit(self):
+        """Der Projektname reicht nicht aus, ein passendes Fachwort dagegen schon."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "hardware.md"
+            path.write_text(
+                "Cosi-Lab – Hardwareübersicht\n"
+                "CPU: Intel Core i5-8500\n",
+                encoding="utf-8",
+            )
+
+            # „Cosi-Lab“ steht in der Datei, eine Seriennummer aber nicht.
+            serial_hit = find_best_excerpt(path, "Welche Seriennummer hat Cosi-Lab?")
+            self.assertIsNone(serial_hit)
+
+            # Dieselbe Datei soll bei einer Frage nach der CPU gefunden werden.
+            cpu_hit = find_best_excerpt(path, "Welche CPU hat Cosi-Lab?")
+            self.assertIsNotNone(cpu_hit)
+            self.assertEqual(cpu_hit["matched_terms"], ["cpu"])
