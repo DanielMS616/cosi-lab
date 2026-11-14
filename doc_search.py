@@ -24,8 +24,11 @@ def question_to_terms(question):
     # und Fragezeichen trennen Wörter: Aus WireGuard-Tunnel werden zwei.
     words = re.findall(r"\w+", question.casefold())
 
-    # Übernimm nur Wörter, die nicht in der Ausschlussliste stehen.
-    return [word for word in words if word not in stop_words]
+    # In der Hardware-Doku steht „CPU“. Suche auch danach,
+    # wenn in der Frage „Prozessor“ steht.
+    aliases = {"prozessor": "cpu"}
+
+    return [aliases.get(word, word) for word in words if word not in stop_words]
 
 
 def find_excerpt(path, phrase):

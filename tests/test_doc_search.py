@@ -56,3 +56,19 @@ class DocSearchTests(unittest.TestCase):
             self.assertIsNotNone(hit)
             self.assertEqual(hit["path"], str(second_path))
             self.assertEqual(hit["matched_terms"], ["ssh", "tunnel", "wireguard"])
+
+
+    def test_prozessor_question_finds_cpu_entry(self):
+        """Eine Frage mit „Prozessor“ findet eine Stelle mit „CPU“."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "hardware.md"
+
+            # In der Datei steht absichtlich nur „CPU“, nicht „Prozessor“.
+            path.write_text("CPU: Intel Core i5-8500\n", encoding="utf-8")
+
+            hit = find_best_excerpt(path, "Welcher Prozessor steckt im Rechner?")
+
+            # Ohne die Zuordnung zu „cpu“ gäbe es hier keinen Treffer.
+            self.assertIsNotNone(hit)
+            self.assertEqual(hit["matched_terms"], ["cpu"])
+            self.assertEqual(hit["text"], "CPU: Intel Core i5-8500")
