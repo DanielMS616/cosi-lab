@@ -108,6 +108,27 @@ def find_best_excerpt(path, question):
     return best_hit
 
 
+def find_best_excerpt_in_files(paths, question):
+    """Wählt aus mehreren Dateien den Ausschnitt mit den meisten Suchtreffern."""
+    best_hit = None
+    best_score = 0
+
+    for path in paths:
+        # Nutze die vorhandene Suche, um den besten Ausschnitt dieser Datei zu finden.
+        hit = find_best_excerpt(path, question)
+        if hit is None:
+            continue
+
+        # Vergleiche, wie viele unterschiedliche Suchwörter gefunden wurden.
+        # Bei Gleichstand bleibt der Treffer aus der zuerst geprüften Datei.
+        score = len(hit["matched_terms"])
+        if score > best_score:
+            best_hit = hit
+            best_score = score
+
+    return best_hit
+
+
 def main():
     """Nimmt die Terminalargumente entgegen und zeigt das Suchergebnis an."""
     parser = argparse.ArgumentParser(description="Sucht eine Phrase in einer Datei.")
@@ -130,7 +151,17 @@ def main():
         action="store_true",
         help="Sendet die Frage und die gefundene Textstelle an GPT.",
     )
+    parser.add_argument(
+        "--also-search",
+        action="append",
+        default=[],
+        metavar="DATEI",
+        help="Durchsucht eine weitere Datei. Kann mehrfach angegeben werden.",
+    )
     args = parser.parse_args()
+
+    if args.also_search and not args.question:
+        parser.error("--also-search setzt --question voraus.")
 
     # Beide Optionen brauchen eine Frage, keine reine Phrasensuche.
     if (args.show_prompt or args.gpt) and not args.question:
@@ -138,7 +169,9 @@ def main():
 
     # Derselbe Suchtext wird je nach Schalter unterschiedlich ausgewertet.
     if args.question:
-        hit = find_best_excerpt(args.path, args.phrase)
+        # Prüfe zuerst die Hauptdatei, danach die zusätzlichen Dateien.
+        paths = [args.path] + args.also_search
+        hit = find_best_excerpt_in_files(paths, args.phrase)
     else:
         hit = find_excerpt(args.path, args.phrase)
 
