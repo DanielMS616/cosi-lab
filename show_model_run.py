@@ -1,6 +1,7 @@
 import argparse
 import sqlite3
 
+from pathlib import Path
 from model_storage import load_model_run
 
 
@@ -11,6 +12,11 @@ def main():
         "--database",
         default="data/model_runs.sqlite3",
         help="Pfad zur SQLite-Datei (Standard: %(default)s)",
+    )
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Zeigt das Ziel für den Berichtsexport an.",
     )
     args = parser.parse_args()
 
@@ -41,6 +47,31 @@ def main():
     print(run["prompt"])
     print("\nAntwort:")
     print(run["response_text"])
+
+    # Path("reports") / ... setzt Ordner und Dateinamen zusammen.
+    # Die Lauf-ID macht den Namen eindeutig: Für Lauf 12 ergibt sich reports/model-run-12.txt
+    if args.export:
+        target = Path("reports") / f"model-run-{run['id']}.txt"
+        print(f"\nVorgesehenes Exportziel: {target}")
+
+        answer = input("Bericht exportieren? [ja/nein]: ").strip().lower()
+
+        if answer != "ja":
+            print("Export abgelehnt.")
+            return
+
+        try:
+            # Lege den Ordner erst nach der Freigabe an.
+            target.parent.mkdir(exist_ok=True)
+
+            # "x" erstellt eine neue Datei und schützt eine vorhandene Datei.
+            with target.open("x", encoding="utf-8", newline="") as file:
+                file.write(run["response_text"])
+        except FileExistsError:
+            parser.exit(1, f"Export abgebrochen: Ziel bereits belegt: {target}\n")
+            # Zieldatei existiert bereits / reports existiert als Datei statt als Ordner
+
+        print(f"Bericht exportiert: {target}")
 
 
 if __name__ == "__main__":
