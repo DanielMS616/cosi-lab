@@ -125,11 +125,16 @@ def main():
         action="store_true",
         help="Zeigt den Modellprompt für eine Frage an.",
     )
+    parser.add_argument(
+        "--gpt",
+        action="store_true",
+        help="Sendet die Frage und die gefundene Textstelle an GPT.",
+    )
     args = parser.parse_args()
 
-    # Eine Promptvorschau braucht eine Frage als Eingabe.
-    if args.show_prompt and not args.question:
-        parser.error("--show-prompt setzt --question voraus.")
+    # Beide Optionen brauchen eine Frage, keine reine Phrasensuche.
+    if (args.show_prompt or args.gpt) and not args.question:
+        parser.error("--show-prompt und --gpt setzen --question voraus.")
 
     # Derselbe Suchtext wird je nach Schalter unterschiedlich ausgewertet.
     if args.question:
@@ -143,8 +148,21 @@ def main():
         print("Keine passende Fundstelle gefunden.")
         return
 
-    if args.show_prompt:
-        print(build_doc_prompt(args.phrase, hit))
+    if args.show_prompt or args.gpt:
+        # Vorschau und Modellaufruf verwenden denselben Prompt.
+        prompt = build_doc_prompt(args.phrase, hit)
+
+        if args.show_prompt:
+            print(prompt)
+
+        if args.gpt:
+            # Lade das API-Modul erst, wenn wirklich eine Anfrage ansteht.
+            from model_gpt import generate_gpt_report
+
+            result = generate_gpt_report(prompt)
+            print("\nGPT-Antwort:")
+            print(result["text"])
+
         return
 
     print(f"{hit['path']}:{hit['start_line']}-{hit['end_line']}")
