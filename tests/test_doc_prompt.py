@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 
 from doc_search import main
 
-
 class DocPromptTests(unittest.TestCase):
     def test_preview_shows_original_question_source_and_excerpt(self):
         """Die Vorschau zeigt die Frage und die dazu gefundene Quelle."""
@@ -36,6 +35,32 @@ class DocPromptTests(unittest.TestCase):
             self.assertIn(f"Frage: {question}\n", result.stdout)
             self.assertIn(f"Fundstelle: {path}:1-3\n", result.stdout)
             self.assertIn(f"Ausschnitt:\n{excerpt}\n", result.stdout)
+
+
+    def test_project_docs_preview_finds_source_without_a_file_argument(self):
+        """Mit --project-docs findet die Vorschau die Quelle ohne Dateipfad."""
+        project_dir = Path(__file__).resolve().parents[1]
+        question = "Wie funktioniert SSH im WireGuard-Tunnel?"
+
+        # Der Befehl bekommt eine Frage, aber keinen Pfad zu einem Dokument.
+        # cwd setzt den Projektordner, damit die relativen docs/-Pfade stimmen.
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(project_dir / "doc_search.py"),
+                question,
+                "--project-docs",
+                "--show-prompt",
+            ],
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"Frage: {question}\n", result.stdout)
+        self.assertIn("Fundstelle: docs/aufbau-fernzugriff.md:", result.stdout)
+        self.assertIn("SSH im Tunnel", result.stdout)
 
 
     def test_no_match_skips_the_model_call(self):

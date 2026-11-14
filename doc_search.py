@@ -5,6 +5,13 @@ from pathlib import Path
 from doc_prompt import build_doc_prompt
 
 
+# Diese beiden Dateien durchsucht --project-docs vom Projektordner aus.
+PROJECT_DOCS = (
+    "docs/aufbau-hardware.md",
+    "docs/aufbau-fernzugriff.md",
+)
+
+
 def question_to_terms(question):
     """Gewinnt Suchwörter aus einer Frage."""
     # Diese Wörter helfen bei unserer Dokusuche meist nicht weiter.
@@ -134,7 +141,12 @@ def main():
     parser = argparse.ArgumentParser(description="Sucht eine Phrase in einer Datei.")
 
     # Die Reihenfolge im Terminal ist: erst der Dateipfad, dann die Suchphrase.
-    parser.add_argument("path", help="Pfad zur Datei")
+    parser.add_argument("path", nargs="?", help="Pfad zur Datei")
+    parser.add_argument(
+        "--project-docs",
+        action="store_true",
+        help="Durchsucht die festgelegten Projektdokumente.",
+    )
     parser.add_argument("phrase", help="Suchphrase, z. B. 'ssh im tunnel'")
     parser.add_argument(
         "--question",
@@ -160,17 +172,19 @@ def main():
     )
     args = parser.parse_args()
 
-    if args.also_search and not args.question:
-        parser.error("--also-search setzt --question voraus.")
+    # Die Projektdoku wird immer als Fragensuche ausgewertet.
+    use_question_search = args.question or args.project_docs
 
-    # Beide Optionen brauchen eine Frage, keine reine Phrasensuche.
-    if (args.show_prompt or args.gpt) and not args.question:
-        parser.error("--show-prompt und --gpt setzen --question voraus.")
+    if args.project_docs and (args.path is not None or args.also_search):
+        parser.error("--project-docs wird ohne Dateipfad und --also-search verwendet.")
+    if args.path is None and not args.project_docs:
+        parser.error("Gib einen Dateipfad oder --project-docs an.")
+    if (args.show_prompt or args.gpt or args.also_search) and not use_question_search:
+        parser.error("--show-prompt, --gpt und --also-search setzen --question voraus.")
 
-    # Derselbe Suchtext wird je nach Schalter unterschiedlich ausgewertet.
-    if args.question:
-        # Prüfe zuerst die Hauptdatei, danach die zusätzlichen Dateien.
-        paths = [args.path] + args.also_search
+    if use_question_search:
+        # Nur die Dateiliste ändert sich; die Rangfolge berechnet dieselbe Funktion.
+        paths = PROJECT_DOCS if args.project_docs else [args.path] + args.also_search
         hit = find_best_excerpt_in_files(paths, args.phrase)
     else:
         hit = find_excerpt(args.path, args.phrase)
