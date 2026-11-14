@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 
-def generate_gpt_report(prompt):
+def generate_gpt_report(prompt, *, max_output_tokens=120):
     """Sendet den Temperaturprompt an GPT und gibt die Antwort als Text zurück."""
 
     # __file__ ist der Pfad zu model_gpt.py. Die .env liegt direkt daneben.
@@ -19,7 +19,7 @@ def generate_gpt_report(prompt):
     raw_response = client.responses.with_raw_response.create(
         model="gpt-4o-mini",
         input=prompt,
-        max_output_tokens=120,
+        max_output_tokens=max_output_tokens,
     )
 
     # Der HTTP-Header liefert die Verarbeitungszeit als Text.
@@ -37,4 +37,10 @@ def generate_gpt_report(prompt):
         "processing_ms": processing_ms,
         "input_tokens": usage.input_tokens if usage is not None else None,
         "output_tokens": usage.output_tokens if usage is not None else None,
+        "status": response.status,
+        "incomplete_reason": (
+            response.incomplete_details.reason
+            if response.incomplete_details is not None
+            else None
+        ),
     }

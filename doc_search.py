@@ -2,7 +2,7 @@ import re
 import argparse
 
 from pathlib import Path
-from doc_prompt import build_doc_prompt
+from doc_prompt import build_doc_prompt, build_multi_doc_prompt
 
 
 # Diese beiden Dateien durchsucht --project-docs vom Projektordner aus.
@@ -142,6 +142,26 @@ def find_best_excerpt_in_files(paths, question):
     return best_hit
 
 
+def find_top_excerpts_in_files(paths, question):
+    """Gibt bis zu zwei Fundstellen zurück, die am besten zur Frage passen."""
+    hits = []
+
+    for path in paths:
+        # Pro Datei nehmen wir ihren besten Ausschnitt mit.
+        hit = find_best_excerpt(path, question)
+        if hit is not None:
+            hits.append(hit)
+
+    # Die Anzahl passender Suchwörter entscheidet über die Reihenfolge.
+    # reverse=True sortiert absteigend: Der Treffer mit den meisten steht vorn.
+    # Bei Gleichstand bleibt die Reihenfolge der Dateien erhalten.
+    hits.sort(key=lambda hit: len(hit["matched_terms"]), reverse=True)
+
+    # Nimm höchstens zwei Treffer. Bei einem Treffer bleibt es bei einem,
+    # und ohne Treffer kommt eine leere Liste zurück.
+    return hits[:2]
+
+
 def main():
     """Nimmt die Terminalargumente entgegen und zeigt das Suchergebnis an."""
     parser = argparse.ArgumentParser(description="Sucht eine Phrase in einer Datei.")
@@ -176,11 +196,18 @@ def main():
         metavar="DATEI",
         help="Durchsucht eine weitere Datei. Kann mehrfach angegeben werden.",
     )
+    parser.add_argument(
+        "--multi-source",
+        action="store_true",
+        help="Zeigt bis zu zwei Fundstellen für eine Frage.",
+    )
     args = parser.parse_args()
 
     # Die Projektdoku wird immer als Fragensuche ausgewertet.
     use_question_search = args.question or args.project_docs
 
+    if args.multi_source and not use_question_search:
+        parser.error("--multi-source setzt --question oder --project-docs voraus.")
     if args.project_docs and (args.path is not None or args.also_search):
         parser.error("--project-docs wird ohne Dateipfad und --also-search verwendet.")
     if args.path is None and not args.project_docs:
@@ -189,21 +216,26 @@ def main():
         parser.error("--show-prompt, --gpt und --also-search setzen --question voraus.")
 
     if use_question_search:
-        # Nur die Dateiliste ändert sich; die Rangfolge berechnet dieselbe Funktion.
         paths = PROJECT_DOCS if args.project_docs else [args.path] + args.also_search
-        hit = find_best_excerpt_in_files(paths, args.phrase)
+        hits = find_top_excerpts_in_files(paths, args.phrase)
+
+        # Ohne den neuen Schalter verwende ich nur den besten Treffer.
+        if not args.multi_source:
+            hits = hits[:1]
     else:
         hit = find_excerpt(args.path, args.phrase)
+        hits = [hit] if hit is not None else []
 
-    # Bei None gibt es kein Dictionary. Beende main(), bevor wir auf
-    # Felder wie hit["path"] zugreifen.
-    if hit is None:
+    if not hits:
         print("Keine passende Fundstelle gefunden.")
         return
 
     if args.show_prompt or args.gpt:
         # Vorschau und Modellaufruf verwenden denselben Prompt.
-        prompt = build_doc_prompt(args.phrase, hit)
+        if len(hits) == 1:
+            prompt = build_doc_prompt(args.phrase, hits[0])
+        else:
+            prompt = build_multi_doc_prompt(args.phrase, hits)
 
         if args.show_prompt:
             print(prompt)
@@ -212,14 +244,20 @@ def main():
             # Lade das API-Modul erst, wenn wirklich eine Anfrage ansteht.
             from model_gpt import generate_gpt_report
 
-            result = generate_gpt_report(prompt)
+            # Dokufragen brauchen Platz für Antworten mit mehreren Quellenangaben.
+            result = generate_gpt_report(prompt, max_output_tokens=240)
             print("\nGPT-Antwort:")
             print(result["text"])
 
+            print(f"\nAPI-Status: {result['status']}")
+            if result["incomplete_reason"] is not None:
+                print(f"Grund für unvollständige Antwort: {result['incomplete_reason']}")
+
         return
 
-    print(f"{hit['path']}:{hit['start_line']}-{hit['end_line']}")
-    print(hit["text"])
+    for hit in hits:
+        print(f"{hit['path']}:{hit['start_line']}-{hit['end_line']}")
+        print(hit["text"])
 
 
 # Beim direkten Start läuft main(). Beim Import von find_excerpt()

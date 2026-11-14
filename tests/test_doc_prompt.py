@@ -86,3 +86,51 @@ class DocPromptTests(unittest.TestCase):
 
             fake_gpt.generate_gpt_report.assert_not_called()
             self.assertEqual(output.getvalue(), "Keine passende Fundstelle gefunden.\n")
+
+
+    def test_multi_source_adds_the_second_source_only_when_requested(self):
+        """Die Promptvorschau enthält nur mit --multi-source beide Quellen."""
+        with tempfile.TemporaryDirectory() as folder:
+            hardware = Path(folder) / "hardware.md"
+            remote = Path(folder) / "fernzugriff.md"
+
+            # Jede Datei beantwortet nur einen Teil der Frage.
+            hardware_text = "CPU: Intel Core i5-8500"
+            remote_text = (
+                "WireGuard-Endpunkt\n"
+                "SSH-Anmeldung mit Schlüssel\n"
+                "SSH läuft im Tunnel."
+            )
+            hardware.write_text(hardware_text, encoding="utf-8")
+            remote.write_text(remote_text, encoding="utf-8")
+
+            script = Path(__file__).resolve().parents[1] / "doc_search.py"
+            command = [
+                sys.executable,
+                str(script),
+                str(hardware),
+                "Welche CPU ist verbaut und wie läuft SSH im WireGuard-Tunnel?",
+                "--question",
+                "--also-search", str(remote),
+                "--show-prompt",
+            ]
+
+            # Gleiche Frage, gleiche Dateien. Nur der Schalter ändert sich.
+            single = subprocess.run(command, capture_output=True, text=True)
+            multi = subprocess.run(
+                command + ["--multi-source"], capture_output=True, text=True
+            )
+
+            self.assertEqual(single.returncode, 0, single.stderr)
+            self.assertIn(f"Fundstelle: {remote}:1-3\n", single.stdout)
+            self.assertNotIn(hardware_text, single.stdout)
+
+            self.assertEqual(multi.returncode, 0, multi.stderr)
+            self.assertIn(
+                f"Fundstelle 1: {remote}:1-3\nAusschnitt:\n{remote_text}",
+                multi.stdout,
+            )
+            self.assertIn(
+                f"Fundstelle 2: {hardware}:1-1\nAusschnitt:\n{hardware_text}",
+                multi.stdout,
+            )
