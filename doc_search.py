@@ -2,6 +2,7 @@ import re
 import argparse
 
 from pathlib import Path
+from doc_prompt import build_doc_prompt
 
 
 def question_to_terms(question):
@@ -119,7 +120,16 @@ def main():
         action="store_true",
         help="Sucht den besten Ausschnitt anhand der Wörter in einer Frage.",
     )
+    parser.add_argument(
+        "--show-prompt",
+        action="store_true",
+        help="Zeigt den Modellprompt für eine Frage an.",
+    )
     args = parser.parse_args()
+
+    # Eine Promptvorschau braucht eine Frage als Eingabe.
+    if args.show_prompt and not args.question:
+        parser.error("--show-prompt setzt --question voraus.")
 
     # Derselbe Suchtext wird je nach Schalter unterschiedlich ausgewertet.
     if args.question:
@@ -131,6 +141,10 @@ def main():
     # Felder wie hit["path"] zugreifen.
     if hit is None:
         print("Keine passende Fundstelle gefunden.")
+        return
+
+    if args.show_prompt:
+        print(build_doc_prompt(args.phrase, hit))
         return
 
     print(f"{hit['path']}:{hit['start_line']}-{hit['end_line']}")
