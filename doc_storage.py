@@ -111,3 +111,31 @@ def load_doc_run(database_path, run_id):
     run["sources"] = json.loads(run.pop("sources_json"))
     run["citations"] = json.loads(run.pop("citations_json"))
     return run
+
+
+def list_doc_runs(database_path, *, limit: int = 10):
+    """Listet gespeicherte Dokuläufe auf, zuletzt gespeicherte zuerst."""
+    if not 1 <= limit <= 100:
+        raise ValueError("limit muss zwischen 1 und 100 liegen.")
+
+    # Wie beim Abruf eines einzelnen Laufs: vorhandene DB nur lesend öffnen.
+    database_uri = Path(database_path).resolve().as_uri() + "?mode=ro"
+    connection = sqlite3.connect(database_uri, uri=True)
+
+    try:
+        connection.row_factory = sqlite3.Row
+
+        # Wähle nur die Felder aus, die in der Verlaufsliste stehen sollen.
+        rows = connection.execute(
+            """
+            SELECT id, question, model, requested_at_utc
+            FROM doc_runs
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
