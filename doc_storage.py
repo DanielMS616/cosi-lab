@@ -83,3 +83,31 @@ def save_doc_run(
         return cursor.lastrowid
     finally:
         connection.close()
+
+
+def load_doc_run(database_path, run_id):
+    """Liest einen gespeicherten Dokulauf oder gibt bei unbekannter ID None zurück."""
+
+    # mode=ro öffnet SQLite schreibgeschützt. Bei einem falschen Pfad
+    # wird dadurch keine neue, leere Datenbank angelegt.
+    database_uri = Path(database_path).resolve().as_uri() + "?mode=ro"
+    connection = sqlite3.connect(database_uri, uri=True)
+
+    try:
+        # Über die Spaltennamen ist später z. B. row["prompt"] möglich.
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            "SELECT * FROM doc_runs WHERE id = ?", (run_id,)
+        ).fetchone()
+    finally:
+        connection.close()
+
+    if row is None:
+        return None
+
+    # SQLite liefert JSON als Text. pop() holt den Text aus dem Dictionary;
+    # json.loads() wandelt ihn zurück in eine Liste bzw. ein Dictionary.
+    run = dict(row)
+    run["sources"] = json.loads(run.pop("sources_json"))
+    run["citations"] = json.loads(run.pop("citations_json"))
+    return run
