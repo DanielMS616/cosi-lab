@@ -3,6 +3,12 @@
 <head>
     <meta charset="utf-8">
     <title>Cosi-Lab – Dokusuche</title>
+    <style>
+        pre {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+    </style>
 </head>
 <body>
     <h1>Cosi-Lab – Dokusuche</h1>
@@ -26,11 +32,17 @@
         <button id="answer-button" type="submit">Mit Modell beantworten</button>
     </form>
 
-    <h2>Promptvorschau</h2>
-    <pre id="output" style="white-space: pre-wrap" aria-live="polite">Noch keine Frage gestellt.</pre>
+    <p id="search-status" role="status">Noch keine Frage gestellt.</p>
 
     <h2>Modellantwort</h2>
-    <pre id="answer-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Modell aufgerufen.</pre>
+    <pre id="answer-output">Noch kein Modell aufgerufen.</pre>
+
+    <h2>Ausgewählte Fundstellen</h2>
+    <div id="search-sources"></div>
+    <details id="search-prompt" hidden>
+        <summary>Vollständigen Prompt anzeigen</summary>
+        <pre id="search-prompt-text"></pre>
+    </details>
 
     <h2>Letzte Dokuläufe</h2>
     <p id="history-status" role="status"></p>
@@ -43,7 +55,17 @@
         <button id="load-run-button" type="submit">Dokulauf laden</button>
     </form>
 
-    <pre id="run-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Dokulauf geladen.</pre>
+    <p id="run-status" role="status">Noch kein Dokulauf geladen.</p>
+    <div id="run-details" hidden>
+        <pre id="run-summary"></pre>
+
+        <h3>Gespeicherte Fundstellen</h3>
+        <div id="run-sources"></div>
+        <details id="run-prompt">
+            <summary>Gesendeten Prompt anzeigen</summary>
+            <pre id="run-prompt-text"></pre>
+        </details>
+    </div>
 
     <script>
         const form = document.getElementById("search-form");
@@ -51,26 +73,72 @@
         const multiSource = document.getElementById("multi-source");
         const provider = document.getElementById("provider");
         const answerButton = document.getElementById("answer-button");
-        const output = document.getElementById("output");
-        const answerOutput = document.getElementById("answer-output");
         const buttons = form.querySelectorAll("button");
+
+        const searchStatus = document.getElementById("search-status");
+        const answerOutput = document.getElementById("answer-output");
+        const searchSources = document.getElementById("search-sources");
+        const searchPrompt = document.getElementById("search-prompt");
+        const searchPromptText = document.getElementById("search-prompt-text");
 
         const historyStatus = document.getElementById("history-status");
         const runHistory = document.getElementById("run-history");
         const loadRunForm = document.getElementById("load-run-form");
         const runIdInput = document.getElementById("run-id");
         const loadRunButton = document.getElementById("load-run-button");
-        const runOutput = document.getElementById("run-output");
+        const runStatus = document.getElementById("run-status");
+        const runDetails = document.getElementById("run-details");
+        const runSummary = document.getElementById("run-summary");
+        const runSources = document.getElementById("run-sources");
+        const runPrompt = document.getElementById("run-prompt");
+        const runPromptText = document.getElementById("run-prompt-text");
+
+        async function fetchJson(url, options) {
+            const response = await fetch(url, options);
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => null);
+                const message = typeof error?.detail === "string"
+                    ? error.detail
+                    : `Anfrage fehlgeschlagen (HTTP ${response.status}).`;
+                throw new Error(message);
+            }
+
+            return response.json();
+        }
+
+        function renderSources(container, sources) {
+            // Die aktuelle Frage und gespeicherte Läufe nutzen dieselbe Darstellung.
+            container.replaceChildren();
+
+            for (const source of sources) {
+                const heading = document.createElement("p");
+                heading.textContent =
+                    `${source.path}:${source.start_line}-${source.end_line}`;
+
+                const excerpt = document.createElement("pre");
+                // Zeige den Dateiinhalt als Text. Der Browser interpretiert ihn nicht als HTML.
+                excerpt.textContent = source.text;
+
+                container.append(heading, excerpt);
+            }
+        }
+
+        function formatCitations(citations) {
+            return [
+                `Erkannte Fundstellen: ${citations.cited.join(", ") || "keine"}`,
+                `Unbekannte Fundstellen: ${citations.unknown.join(", ") || "keine"}`,
+            ].join("\n");
+        }
 
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
 
-            // Nur der Antwortknopf darf einen Modellaufruf auslösen.
+            // Nur der Antwortknopf kann einen Modellaufruf auslösen.
             const wantsAnswer = event.submitter === answerButton;
             const endpoint = wantsAnswer
                 ? "/doc-questions/answer"
                 : "/doc-questions/preview";
-            const target = wantsAnswer ? answerOutput : output;
             const payload = {
                 question: question.value,
                 multi_source: multiSource.checked,
@@ -80,59 +148,50 @@
                 payload.provider = provider.value;
             }
 
-            output.textContent = "";
-            answerOutput.textContent = "";
-            target.textContent = wantsAnswer
+            // Entferne das alte Ergebnis, damit es nicht zur neuen Frage gehört.
+            searchSources.replaceChildren();
+            searchPrompt.hidden = true;
+            searchPrompt.open = false;
+            searchPromptText.textContent = "";
+            answerOutput.textContent = "Kein Modell aufgerufen.";
+            searchStatus.textContent = wantsAnswer
                 ? "Antwort wird erstellt …"
                 : "Suche läuft …";
 
-            // Während der Anfrage sollen keine weiteren Aufrufe starten.
-            buttons.forEach(button => {
-                button.disabled = true;
-            });
+            buttons.forEach(button => { button.disabled = true; });
 
             try {
-                const response = await fetch(endpoint, {
+                const data = await fetchJson(endpoint, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 });
 
-                if (!response.ok) {
-                    const error = await response.json().catch(() => ({}));
-                    target.textContent = typeof error.detail === "string"
-                        ? error.detail
-                        : `Anfrage fehlgeschlagen (HTTP ${response.status}).`;
+                if (data.sources.length === 0) {
+                    searchStatus.textContent = "Keine passende Fundstelle gefunden.";
                     return;
                 }
 
-                // textContent zeigt den Prompt als Text an, nicht als HTML.
-                const data = await response.json();
-                output.textContent =
-                    data.prompt ?? "Keine passende Fundstelle gefunden.";
+                renderSources(searchSources, data.sources);
+                searchPromptText.textContent = data.prompt;
+                searchPrompt.hidden = false;
+                searchStatus.textContent = "";
 
-                if (wantsAnswer) {
-                    if (data.answer === null) {
-                        answerOutput.textContent = "Kein Modell aufgerufen.";
-                    } else {
-                        const status = data.api_status
-                            ? `\nAPI-Status: ${data.api_status}`
-                            : "";
-                        answerOutput.textContent =
-                            `${data.answer}\n\nModell: ${data.model}\n` +
-                            `Dokulauf-ID: ${data.run_id}${status}`;
+                if (wantsAnswer && data.answer !== null) {
+                    const status = data.api_status
+                        ? `\nAPI-Status: ${data.api_status}`
+                        : "";
+                    answerOutput.textContent =
+                        `${data.answer}\n\nModell: ${data.model}\n` +
+                        `Dokulauf-ID: ${data.run_id}${status}\n\n` +
+                        formatCitations(data.citations);
 
-                        // Die Antwort wurde gespeichert. Lade den Verlauf neu.
-                        await loadRunHistory();
-                    }
+                    await loadRunHistory();
                 }
-            } catch {
-                target.textContent =
-                    "Die Antwort der lokalen API konnte nicht gelesen werden.";
+            } catch (error) {
+                searchStatus.textContent = error.message;
             } finally {
-                buttons.forEach(button => {
-                    button.disabled = false;
-                });
+                buttons.forEach(button => { button.disabled = false; });
             }
         });
 
@@ -140,17 +199,7 @@
             historyStatus.textContent = "Verlauf wird geladen …";
 
             try {
-                const response = await fetch("/doc-runs?limit=10");
-
-                if (!response.ok) {
-                    historyStatus.textContent =
-                        `Der Verlauf konnte nicht geladen werden (HTTP ${response.status}).`;
-                    return;
-                }
-
-                const data = await response.json();
-
-                // Ersetze die bisherigen Einträge, statt sie erneut anzuhängen.
+                const data = await fetchJson("/doc-runs?limit=10");
                 runHistory.replaceChildren();
 
                 if (data.runs.length === 0) {
@@ -164,59 +213,45 @@
                     button.type = "button";
                     button.textContent =
                         `#${run.id} · ${run.question} · ${run.model} · ${run.requested_at_utc}`;
-
-                    // Ein Klick verwendet dieselbe Lesefunktion wie die ID-Eingabe.
                     button.addEventListener("click", () => loadDocRun(run.id));
                     item.append(button);
                     runHistory.append(item);
                 }
 
                 historyStatus.textContent = "";
-            } catch {
-                historyStatus.textContent = "Der Verlauf konnte nicht geladen werden.";
+            } catch (error) {
+                historyStatus.textContent = `Verlauf: ${error.message}`;
             }
         }
 
         async function loadDocRun(id) {
-            // Verhindere, dass zwei Detailabrufe gleichzeitig die Ausgabe ändern.
             if (loadRunButton.disabled) {
                 return;
             }
 
             runIdInput.value = String(id);
-            runOutput.textContent = "Dokulauf wird geladen …";
+            runStatus.textContent = "Dokulauf wird geladen …";
+            runDetails.hidden = true;
+            runPrompt.open = false;
             loadRunButton.disabled = true;
 
             try {
-                const runId = encodeURIComponent(id);
-                const response = await fetch(`/doc-runs/${runId}`);
+                const run = await fetchJson(`/doc-runs/${encodeURIComponent(id)}`);
 
-                if (!response.ok) {
-                    const error = await response.json().catch(() => ({}));
-                    runOutput.textContent = typeof error.detail === "string"
-                        ? error.detail
-                        : `Abruf fehlgeschlagen (HTTP ${response.status}).`;
-                    return;
-                }
-
-                const run = await response.json();
-
-                // Die API liefert die damaligen Ausschnitte aus SQLite.
-                const sources = run.sources.map(source =>
-                    `${source.path}:${source.start_line}-${source.end_line}\n${source.text}`
-                ).join("\n\n");
-
-                runOutput.textContent = [
+                runSummary.textContent = [
                     `Dokulauf ${run.id} · ${run.model}`,
                     `Frage: ${run.question}`,
-                    `Gesendeter Prompt:\n${run.prompt}`,
-                    `Gespeicherte Fundstellen:\n${sources}`,
                     `Antwort:\n${run.response_text}`,
-                    `Erkannte Fundstellen: ${run.citations.cited.join(", ") || "keine"}`,
-                    `Unbekannte Fundstellen: ${run.citations.unknown.join(", ") || "keine"}`,
+                    formatCitations(run.citations),
                 ].join("\n\n");
-            } catch {
-                runOutput.textContent = "Der Dokulauf konnte nicht geladen werden.";
+
+                // Hier kommen die Ausschnitte aus dem gespeicherten Lauf.
+                renderSources(runSources, run.sources);
+                runPromptText.textContent = run.prompt;
+                runDetails.hidden = false;
+                runStatus.textContent = "";
+            } catch (error) {
+                runStatus.textContent = error.message;
             } finally {
                 loadRunButton.disabled = false;
             }
@@ -227,7 +262,6 @@
             loadDocRun(runIdInput.value);
         });
 
-        // Zeige die letzten Läufe schon beim Öffnen der Startseite an.
         loadRunHistory();
     </script>
 </body>
