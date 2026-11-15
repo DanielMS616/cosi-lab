@@ -1,13 +1,13 @@
 import sqlite3
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from typing import Literal
+from typing import Annotated, Literal
 from openai import APIConnectionError
 from pathlib import Path
 from fastapi.responses import FileResponse
 
-from doc_storage import load_doc_run
+from doc_storage import list_doc_runs, load_doc_run
 from doc_answer import answer_and_save_doc_question
 from doc_prompt import build_doc_prompt, build_multi_doc_prompt
 from doc_search import DOC_DATABASE_PATH, PROJECT_DOCS, find_top_excerpts_in_files
@@ -97,6 +97,21 @@ def answer_doc_question(request: DocAnswerRequest):
         run_id=result["run_id"],
     )
     return response
+
+
+@app.get("/doc-runs")
+def read_doc_runs(limit: Annotated[int, Query(ge=1, le=100)] = 10):
+    """Liefert eine Übersicht der zuletzt gespeicherten Dokuläufe."""
+    try:
+        # Sortierung und Begrenzung übernimmt die getestete SQLite-Funktion.
+        runs = list_doc_runs(DOC_DATABASE_PATH, limit=limit)
+    except sqlite3.Error as error:
+        raise HTTPException(
+            status_code=500,
+            detail="Dokuläufe konnten nicht gelesen werden.",
+        ) from error
+
+    return {"runs": runs}
 
 
 @app.get("/doc-runs/{run_id}")

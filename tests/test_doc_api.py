@@ -204,3 +204,40 @@ class DocApiTests(unittest.TestCase):
         self.assertEqual(
             response.json(), {"detail": "Kein Dokulauf mit ID 99999 gefunden."}
         )
+
+    def test_list_doc_runs_respects_the_requested_limit(self):
+        initialize_doc_database(self.database_path)
+
+        # Drei Einträge machen den Unterschied zwischen dem angeforderten
+        # Limit von zwei und dem Standardlimit von zehn sichtbar.
+        ids = []
+        for question in ("Erste Frage", "Zweite Frage", "Dritte Frage"):
+            ids.append(save_doc_run(
+                self.database_path,
+                model="gpt-test",
+                requested_at_utc="2026-11-15T12:00:00+00:00",
+                question=question,
+                prompt="Testprompt",
+                hits=[],
+                response_text="Testantwort",
+                citations={"cited": [], "unknown": []},
+            ))
+
+        response = self.client.get("/doc-runs?limit=2")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        runs = response.json()["runs"]
+        self.assertEqual([run["id"] for run in runs], [ids[2], ids[1]])
+        self.assertEqual(
+            set(runs[0]), {"id", "question", "model", "requested_at_utc"}
+        )
+
+    def test_invalid_run_list_limit_is_rejected_before_reading(self):
+        # Prüfe beide Grenzen. Die SQLite-Funktion darf nie erreicht werden.
+        with patch("doc_api.list_doc_runs") as list_runs:
+            for limit in (0, 101):
+                with self.subTest(limit=limit):
+                    response = self.client.get(f"/doc-runs?limit={limit}")
+                    self.assertEqual(response.status_code, 422, response.text)
+
+        list_runs.assert_not_called()
