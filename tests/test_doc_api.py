@@ -1,13 +1,15 @@
 import tempfile
 import unittest
+import sys
+
 from pathlib import Path
 from unittest.mock import patch
-import sys
 from types import ModuleType
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from httpx import Request
 from openai import APIConnectionError
+from google.genai.errors import ServerError
 
 from doc_storage import initialize_doc_database, load_doc_run, save_doc_run
 from doc_api import app
@@ -241,3 +243,32 @@ class DocApiTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 422, response.text)
 
         list_runs.assert_not_called()
+
+    def test_gemini_unavailable_returns_503_without_saving(self):
+        # Simuliere eine 503-Antwort von Gemini, ohne eine Anfrage zu senden.
+        error = ServerError(
+            503,
+            {"error": {"message": "Simulierter Ausfall", "status": "UNAVAILABLE"}},
+        )
+        fake_gemini = ModuleType("model_gemini")
+        fake_gemini.GEMINI_MODEL = "gemini-test"
+        fake_gemini.generate_gemini_report = Mock(side_effect=error)
+
+        with (
+            patch.dict(sys.modules, {"model_gemini": fake_gemini}),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post(
+                "/doc-questions/answer",
+                json={"question": "Welche CPU hat Cosi-Lab?", "provider": "gemini"},
+            )
+
+        # Die Suche hat einen Treffer geliefert und Gemini ausgewählt.
+        # Nach dem Fehler darf trotzdem kein Lauf gespeichert werden.
+        fake_gemini.generate_gemini_report.assert_called_once()
+        self.assertFalse(self.database_path.exists())
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(
+            response.json(),
+            {"detail": "Gemini ist vorübergehend nicht verfügbar."},
+        )

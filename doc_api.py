@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from openai import APIConnectionError
 from pathlib import Path
 from fastapi.responses import FileResponse
+from google.genai.errors import ServerError as GeminiServerError
 
 from doc_storage import list_doc_runs, load_doc_run
 from doc_answer import answer_and_save_doc_question
@@ -85,6 +86,17 @@ def answer_doc_question(request: DocAnswerRequest):
         raise HTTPException(
             status_code=502,
             detail="Der Modellanbieter ist derzeit nicht erreichbar.",
+        ) from error
+    
+    except GeminiServerError as error:
+        # Nur einen Gemini-Ausfall mit HTTP 503 behandeln wir hier gezielt.
+        if error.code != 503:
+            raise
+
+        # Gib dem Browser einen verständlichen Hinweis zum Ausfall.
+        raise HTTPException(
+            status_code=503,
+            detail="Gemini ist vorübergehend nicht verfügbar.",
         ) from error
 
     # Ergänze die Felder erst, wenn die Antwort samt Lauf-ID vorliegt.
