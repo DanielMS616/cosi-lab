@@ -2,10 +2,9 @@ import re
 import argparse
 
 from pathlib import Path
-from datetime import datetime, timezone
 
-from doc_storage import initialize_doc_database, save_doc_run
-from doc_prompt import build_doc_prompt, build_multi_doc_prompt, check_citations
+from doc_answer import answer_and_save_doc_question
+from doc_prompt import build_doc_prompt, build_multi_doc_prompt
 
 
 # Diese beiden Dateien durchsucht --project-docs vom Projektordner aus.
@@ -256,38 +255,26 @@ def main():
             print(prompt)
 
         if use_model:
-            # Lade erst nach einem Treffer den Adapter des gewählten Anbieters.
-            if args.gpt:
-                from model_gpt import generate_gpt_report
+            provider_key = "gpt" if args.gpt else "gemini"
+            result = answer_and_save_doc_question(
+                args.phrase,
+                prompt,
+                hits,
+                provider=provider_key,
+                database_path=DOC_DATABASE_PATH,
+            )
 
-                generate_answer = generate_gpt_report
-                provider = "GPT"
-                model_name = "gpt-4o-mini"
-            else:
-                from model_gemini import generate_gemini_report, GEMINI_MODEL
-
-                generate_answer = generate_gemini_report
-                provider = "Gemini"
-                model_name = GEMINI_MODEL
-
-            # Erfasse den Aufrufzeitpunkt, bevor wir auf die Antwort warten.
-            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-            # Beide Anbieter erhalten denselben fertigen Prompt.
-            result = generate_answer(prompt, max_output_tokens=240)
+            # Hier bleibt nur die Ausgabe für das Terminal.
+            provider = "GPT" if args.gpt else "Gemini"
             print(f"\n{provider}-Antwort:")
             print(result["text"])
 
-            # Unser GPT-Adapter liefert diese Statusfelder bereits.
             if args.gpt:
                 print(f"\nAPI-Status: {result['status']}")
                 if result["incomplete_reason"] is not None:
                     print(f"Grund für unvollständige Antwort: {result['incomplete_reason']}")
 
-            # Vergleiche die Zitate in der Antwort mit denselben Treffern,
-            # aus denen wir den Prompt gebaut haben.
-            citations = check_citations(result["text"], hits)
-
+            citations = result["citations"]
             if citations["unknown"]:
                 print("Fundstellen, die nicht im Prompt standen:")
                 for source in citations["unknown"]:
@@ -297,21 +284,7 @@ def main():
             else:
                 print("Alle erkannten Fundstellen standen im Prompt.")
 
-            # Speichere den tatsächlich gesendeten Prompt und genau seine Quellen.
-            initialize_doc_database(DOC_DATABASE_PATH)
-            run_id = save_doc_run(
-                DOC_DATABASE_PATH,
-                model=model_name,
-                requested_at_utc=requested_at_utc,
-                question=args.phrase,
-                prompt=prompt,
-                hits=hits,
-                response_text=result["text"],
-                citations=citations,
-                api_status=result.get("status"),
-                incomplete_reason=result.get("incomplete_reason"),
-            )
-            print(f"Dokulauf gespeichert: ID {run_id}")
+            print(f"Dokulauf gespeichert: ID {result['run_id']}")
 
         return
 
