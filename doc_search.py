@@ -2,6 +2,9 @@ import re
 import argparse
 
 from pathlib import Path
+from datetime import datetime, timezone
+
+from doc_storage import initialize_doc_database, save_doc_run
 from doc_prompt import build_doc_prompt, build_multi_doc_prompt, check_citations
 
 
@@ -11,6 +14,10 @@ PROJECT_DOCS = (
     "docs/aufbau-fernzugriff.md",
     "docs/anleitung-berichtsexport.md",
 )
+
+
+# Dokufragen nutzen dieselbe SQLite-Datei wie Temperaturberichte.
+DOC_DATABASE_PATH = "data/model_runs.sqlite3"
 
 
 def question_to_terms(question):
@@ -255,11 +262,16 @@ def main():
 
                 generate_answer = generate_gpt_report
                 provider = "GPT"
+                model_name = "gpt-4o-mini"
             else:
-                from model_gemini import generate_gemini_report
+                from model_gemini import generate_gemini_report, GEMINI_MODEL
 
                 generate_answer = generate_gemini_report
                 provider = "Gemini"
+                model_name = GEMINI_MODEL
+
+            # Erfasse den Aufrufzeitpunkt, bevor wir auf die Antwort warten.
+            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
             # Beide Anbieter erhalten denselben fertigen Prompt.
             result = generate_answer(prompt, max_output_tokens=240)
@@ -284,6 +296,22 @@ def main():
                 print("Keine Fundstelle in der Antwort erkannt.")
             else:
                 print("Alle erkannten Fundstellen standen im Prompt.")
+
+            # Speichere den tatsächlich gesendeten Prompt und genau seine Quellen.
+            initialize_doc_database(DOC_DATABASE_PATH)
+            run_id = save_doc_run(
+                DOC_DATABASE_PATH,
+                model=model_name,
+                requested_at_utc=requested_at_utc,
+                question=args.phrase,
+                prompt=prompt,
+                hits=hits,
+                response_text=result["text"],
+                citations=citations,
+                api_status=result.get("status"),
+                incomplete_reason=result.get("incomplete_reason"),
+            )
+            print(f"Dokulauf gespeichert: ID {run_id}")
 
         return
 

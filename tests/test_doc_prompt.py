@@ -2,7 +2,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import json
+import sqlite3
 
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
@@ -12,6 +15,19 @@ from unittest.mock import Mock, patch
 from doc_search import main
 
 class DocPromptTests(unittest.TestCase):
+    def setUp(self):
+        # Jeder Test bekommt einen eigenen temporären Datenbankpfad.
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.database_path = Path(folder.name) / "runs.sqlite3"
+
+        # Wenn der Test main() direkt aufruft, verwendet es diesen Pfad.
+        # Nach dem Test stellt unittest den normalen Pfad wieder her.
+        self.enterContext(
+            patch("doc_search.DOC_DATABASE_PATH", self.database_path)
+        )
+
+
     def test_preview_shows_original_question_source_and_excerpt(self):
         """Die Vorschau zeigt die Frage und die dazu gefundene Quelle."""
         with tempfile.TemporaryDirectory() as folder:
@@ -86,6 +102,7 @@ class DocPromptTests(unittest.TestCase):
 
             fake_gpt.generate_gpt_report.assert_not_called()
             self.assertEqual(output.getvalue(), "Keine passende Fundstelle gefunden.\n")
+            self.assertFalse(self.database_path.exists())
 
 
     def test_multi_source_adds_the_second_source_only_when_requested(self):
@@ -186,6 +203,7 @@ class DocPromptTests(unittest.TestCase):
                 "incomplete_reason": None,
             })
             fake_gemini = ModuleType("model_gemini")
+            fake_gemini.GEMINI_MODEL = "gemini-test"
             gemini_call = fake_gemini.generate_gemini_report = Mock(
                 return_value={"text": answer}
             )
@@ -219,3 +237,57 @@ class DocPromptTests(unittest.TestCase):
                 "Alle erkannten Fundstellen standen im Prompt.",
                 gemini_output.getvalue(),
             )
+
+
+    def test_doc_run_keeps_the_sent_prompt_and_both_source_excerpts(self):
+        """SQLite bewahrt den gesendeten Prompt und die ursprünglichen Quellen."""
+        hardware = self.database_path.parent / "hardware.md"
+        remote = self.database_path.parent / "fernzugriff.md"
+        hardware_text = "CPU: Intel Core i5-8500 (6 Kerne)"
+        remote_text = "SSH-Anmeldung mit Schlüssel durch den WireGuard-Tunnel."
+        hardware.write_text(hardware_text, encoding="utf-8")
+        remote.write_text(remote_text, encoding="utf-8")
+
+        question = "Welche CPU ist verbaut und wie läuft SSH im WireGuard-Tunnel?"
+        answer = f"Intel Core i5-8500 (Fundstelle: {hardware}:1-1)."
+        fake_gpt = ModuleType("model_gpt")
+        fake_gpt.generate_gpt_report = Mock(return_value={
+            "text": answer,
+            "status": "completed",
+            "incomplete_reason": None,
+        })
+
+        # Echte Suche und echte Speicherung; nur der Modellaufruf ist ersetzt.
+        argv = [
+            "doc_search.py", str(hardware), question,
+            "--question", "--also-search", str(remote), "--multi-source", "--gpt",
+        ]
+        with (
+            patch.dict(sys.modules, {"model_gpt": fake_gpt}),
+            patch.object(sys, "argv", argv),
+            redirect_stdout(StringIO()),
+        ):
+            main()
+
+        # Merke den tatsächlich übergebenen Prompt, statt ihn neu zu bauen.
+        fake_gpt.generate_gpt_report.assert_called_once()
+        sent_prompt = fake_gpt.generate_gpt_report.call_args.args[0]
+
+        # Ändere die Datei nach dem Lauf. In SQLite muss der alte Text bleiben.
+        remote.write_text("Inzwischen geändert.", encoding="utf-8")
+
+        with closing(sqlite3.connect(self.database_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute("SELECT * FROM doc_runs").fetchall()
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["question"], question)
+        self.assertEqual(row["prompt"], sent_prompt)
+        self.assertEqual(row["response_text"], answer)
+
+        # Fernzugriff trifft mehr Suchwörter und steht deshalb vor Hardware.
+        self.assertEqual(json.loads(row["sources_json"]), [
+            {"path": str(remote), "start_line": 1, "end_line": 1, "text": remote_text},
+            {"path": str(hardware), "start_line": 1, "end_line": 1, "text": hardware_text},
+        ])
