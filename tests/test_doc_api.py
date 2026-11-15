@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from httpx import Request
 from openai import APIConnectionError
 
-from doc_storage import load_doc_run
+from doc_storage import initialize_doc_database, load_doc_run, save_doc_run
 from doc_api import app
 
 
@@ -156,4 +156,51 @@ class DocApiTests(unittest.TestCase):
         self.assertEqual(
             response.json(),
             {"detail": "Der Modellanbieter ist derzeit nicht erreichbar."},
+        )
+
+    def test_read_doc_run_returns_the_saved_data(self):
+        # Lege einen festen Lauf in der temporären Testdatenbank an.
+        # Dafür brauchen wir weder eine Dokusuche noch ein Modell.
+        initialize_doc_database(self.database_path)
+        source = {
+            "path": "docs/hardware.md",
+            "start_line": 5,
+            "end_line": 5,
+            "text": "CPU: Intel Core i5-8500",
+        }
+        prompt = "Welche CPU?\nCPU: Intel Core i5-8500"
+        answer = "Intel Core i5-8500. (Fundstelle: docs/hardware.md:5-5)"
+        citations = {"cited": ["docs/hardware.md:5-5"], "unknown": []}
+        run_id = save_doc_run(
+            self.database_path,
+            model="gpt-test",
+            requested_at_utc="2026-11-15T12:00:00+00:00",
+            question="Welche CPU?",
+            prompt=prompt,
+            hits=[source],
+            response_text=answer,
+            citations=citations,
+            api_status="completed",
+        )
+
+        # Rufe den Lauf über die echte HTTP-Route ab.
+        response = self.client.get(f"/doc-runs/{run_id}")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["id"], run_id)
+        self.assertEqual(data["prompt"], prompt)
+        self.assertEqual(data["response_text"], answer)
+        self.assertEqual(data["sources"], [source])
+        self.assertEqual(data["citations"], citations)
+
+    def test_read_unknown_doc_run_returns_404(self):
+        # Die Tabelle existiert und ist lesbar. Nur der Lauf fehlt.
+        initialize_doc_database(self.database_path)
+
+        response = self.client.get("/doc-runs/99999")
+
+        self.assertEqual(response.status_code, 404, response.text)
+        self.assertEqual(
+            response.json(), {"detail": "Kein Dokulauf mit ID 99999 gefunden."}
         )

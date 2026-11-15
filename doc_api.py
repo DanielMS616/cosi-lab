@@ -1,8 +1,11 @@
+import sqlite3
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Literal
 from openai import APIConnectionError
 
+from doc_storage import load_doc_run
 from doc_answer import answer_and_save_doc_question
 from doc_prompt import build_doc_prompt, build_multi_doc_prompt
 from doc_search import DOC_DATABASE_PATH, PROJECT_DOCS, find_top_excerpts_in_files
@@ -92,3 +95,25 @@ def answer_doc_question(request: DocAnswerRequest):
         run_id=result["run_id"],
     )
     return response
+
+
+@app.get("/doc-runs/{run_id}")
+def read_doc_run(run_id: int):
+    """Gibt einen gespeicherten Dokulauf anhand seiner ID zurück."""
+    try:
+        # Dieselbe schreibgeschützte Lesefunktion wie in show_doc_run.py.
+        run = load_doc_run(DOC_DATABASE_PATH, run_id)
+    except sqlite3.Error as error:
+        # Ein Datenbankfehler ist etwas anderes als eine unbekannte Lauf-ID.
+        raise HTTPException(
+            status_code=500,
+            detail="Dokuläufe konnten nicht gelesen werden.",
+        ) from error
+
+    if run is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Kein Dokulauf mit ID {run_id} gefunden.",
+        )
+
+    return run
