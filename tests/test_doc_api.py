@@ -2,9 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-
+import sys
+from types import ModuleType
+from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
+from doc_storage import load_doc_run
 from doc_api import app
 
 
@@ -21,6 +24,9 @@ class DocApiTests(unittest.TestCase):
         self.enterContext(
             patch("doc_api.PROJECT_DOCS", (self.hardware, self.remote))
         )
+        # Auch der Antwort-Endpunkt schreibt nur in den temporären Testordner.
+        self.database_path = folder / "runs.sqlite3"
+        self.enterContext(patch("doc_api.DOC_DATABASE_PATH", self.database_path))
         self.client = self.enterContext(TestClient(app))
 
     def test_preview_returns_both_sources_in_ranked_order(self):
@@ -68,3 +74,56 @@ class DocApiTests(unittest.TestCase):
             response.json()["detail"], "Die Frage darf nicht leer sein."
         )
         search.assert_not_called()
+
+    def test_answer_sends_the_previewed_prompt_and_returns_a_saved_run_id(self):
+        question = "Welche CPU hat Cosi-Lab?"
+        answer = f"Intel Core i5-8500. (Fundstelle: {self.hardware}:1-1)"
+        fake_gpt = ModuleType("model_gpt")
+        fake_gpt.generate_gpt_report = Mock(return_value={
+            "text": answer,
+            "status": "completed",
+            "incomplete_reason": None,
+        })
+
+        # Nur GPT ist ersetzt. HTTP-Aufruf, Suche und SQLite laufen echt.
+        with patch.dict(sys.modules, {"model_gpt": fake_gpt}):
+            preview = self.client.post(
+                "/doc-questions/preview", json={"question": question}
+            )
+            response = self.client.post(
+                "/doc-questions/answer",
+                json={"question": question, "provider": "gpt"},
+            )
+
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        expected_prompt = preview.json()["prompt"]
+        fake_gpt.generate_gpt_report.assert_called_once_with(
+            expected_prompt, max_output_tokens=240
+        )
+
+        # Die ID aus dem HTTP-Ergebnis muss zu einem lesbaren Lauf führen.
+        run = load_doc_run(self.database_path, data["run_id"])
+        self.assertIsNotNone(run)
+        self.assertEqual(run["prompt"], expected_prompt)
+        self.assertEqual(data["answer"], answer)
+        self.assertEqual(run["response_text"], answer)
+
+    def test_answer_without_sources_skips_the_model_and_storage(self):
+        with patch("doc_api.answer_and_save_doc_question") as answer_and_save:
+            response = self.client.post(
+                "/doc-questions/answer",
+                json={
+                    "question": "Welche Seriennummer hat Cosi-Lab?",
+                    "provider": "gpt",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["sources"], [])
+        self.assertIsNone(data["answer"])
+        self.assertIsNone(data["run_id"])
+        answer_and_save.assert_not_called()
+        self.assertFalse(self.database_path.exists())
