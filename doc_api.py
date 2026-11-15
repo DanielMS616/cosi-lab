@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Literal
 from openai import APIConnectionError
+from pathlib import Path
+from fastapi.responses import FileResponse
 
 from doc_storage import load_doc_run
 from doc_answer import answer_and_save_doc_question
@@ -117,3 +119,10 @@ def read_doc_run(run_id: int):
         )
 
     return run
+
+
+@app.get("/", include_in_schema=False)
+def show_doc_ui():
+    # Der Dateipfad beginnt beim Ordner, in dem doc_api.py liegt.
+    page = Path(__file__).resolve().parent / "web" / "index.html"
+    return FileResponse(page, media_type="text/html")

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>Cosi-Lab – Dokusuche</title>
+</head>
+<body>
+    <h1>Cosi-Lab – Dokusuche</h1>
+
+    <form id="search-form">
+        <label for="question">Frage zur Projektdoku</label><br>
+        <textarea id="question" rows="3" cols="60" required></textarea><br>
+
+        <label>
+            <input id="multi-source" type="checkbox">
+            Bis zu zwei Fundstellen verwenden
+        </label>
+        <button type="submit">Vorschau anzeigen</button>
+    </form>
+
+    <h2>Promptvorschau</h2>
+    <pre id="output" style="white-space: pre-wrap" aria-live="polite">Noch keine Frage gestellt.</pre>
+
+    <script>
+        const form = document.getElementById("search-form");
+        const question = document.getElementById("question");
+        const multiSource = document.getElementById("multi-source");
+        const output = document.getElementById("output");
+
+        form.addEventListener("submit", async (event) => {
+            // Die Seite bleibt offen. JavaScript schickt die Frage an die API.
+            event.preventDefault();
+            output.textContent = "Suche läuft …";
+
+            try {
+                const response = await fetch("/doc-questions/preview", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        question: question.value,
+                        multi_source: multiSource.checked,
+                    }),
+                });
+
+                if (!response.ok) {
+                    output.textContent = `Vorschau fehlgeschlagen (HTTP ${response.status}).`;
+                    return;
+                }
+
+                // textContent zeigt den Prompt als Text an, auch wenn er HTML-Zeichen enthält.
+                const data = await response.json();
+                output.textContent = data.prompt ?? "Keine passende Fundstelle gefunden.";
+            } catch {
+                output.textContent = "Die lokale API konnte nicht erreicht werden.";
+            }
+        });
+    </script>
+</body>
+</html>
