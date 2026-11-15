@@ -32,8 +32,11 @@
     <h2>Modellantwort</h2>
     <pre id="answer-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Modell aufgerufen.</pre>
 
-    <h2>Gespeicherten Dokulauf öffnen</h2>
+    <h2>Letzte Dokuläufe</h2>
+    <p id="history-status" role="status"></p>
+    <ul id="run-history"></ul>
 
+    <h2>Gespeicherten Dokulauf öffnen</h2>
     <form id="load-run-form">
         <label for="run-id">Dokulauf-ID</label>
         <input id="run-id" type="number" min="1" step="1" required>
@@ -52,8 +55,14 @@
         const answerOutput = document.getElementById("answer-output");
         const buttons = form.querySelectorAll("button");
 
+        const historyStatus = document.getElementById("history-status");
+        const runHistory = document.getElementById("run-history");
+        const loadRunForm = document.getElementById("load-run-form");
+        const runIdInput = document.getElementById("run-id");
+        const loadRunButton = document.getElementById("load-run-button");
+        const runOutput = document.getElementById("run-output");
+
         form.addEventListener("submit", async (event) => {
-            // Die Seite bleibt offen. JavaScript schickt die Frage an die API.
             event.preventDefault();
 
             // Nur der Antwortknopf darf einen Modellaufruf auslösen.
@@ -67,7 +76,6 @@
                 multi_source: multiSource.checked,
             };
 
-            // Die Vorschau braucht keine Anbieterauswahl.
             if (wantsAnswer) {
                 payload.provider = provider.value;
             }
@@ -78,7 +86,7 @@
                 ? "Antwort wird erstellt …"
                 : "Suche läuft …";
 
-            // Verhindere einen weiteren Klick, solange die Anfrage läuft.
+            // Während der Anfrage sollen keine weiteren Aufrufe starten.
             buttons.forEach(button => {
                 button.disabled = true;
             });
@@ -91,7 +99,6 @@
                 });
 
                 if (!response.ok) {
-                    // Zeige die Meldung der API, wenn sie als Text vorliegt.
                     const error = await response.json().catch(() => ({}));
                     target.textContent = typeof error.detail === "string"
                         ? error.detail
@@ -114,32 +121,74 @@
                         answerOutput.textContent =
                             `${data.answer}\n\nModell: ${data.model}\n` +
                             `Dokulauf-ID: ${data.run_id}${status}`;
+
+                        // Die Antwort wurde gespeichert. Lade den Verlauf neu.
+                        await loadRunHistory();
                     }
                 }
             } catch {
                 target.textContent =
                     "Die Antwort der lokalen API konnte nicht gelesen werden.";
             } finally {
-                // Gib beide Buttons auch nach einem Fehler wieder frei.
                 buttons.forEach(button => {
                     button.disabled = false;
                 });
             }
         });
 
-        const loadRunForm = document.getElementById("load-run-form");
-        const runIdInput = document.getElementById("run-id");
-        const loadRunButton = document.getElementById("load-run-button");
-        const runOutput = document.getElementById("run-output");
+        async function loadRunHistory() {
+            historyStatus.textContent = "Verlauf wird geladen …";
 
-        loadRunForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
+            try {
+                const response = await fetch("/doc-runs?limit=10");
+
+                if (!response.ok) {
+                    historyStatus.textContent =
+                        `Der Verlauf konnte nicht geladen werden (HTTP ${response.status}).`;
+                    return;
+                }
+
+                const data = await response.json();
+
+                // Ersetze die bisherigen Einträge, statt sie erneut anzuhängen.
+                runHistory.replaceChildren();
+
+                if (data.runs.length === 0) {
+                    historyStatus.textContent = "Noch keine Dokuläufe gespeichert.";
+                    return;
+                }
+
+                for (const run of data.runs) {
+                    const item = document.createElement("li");
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.textContent =
+                        `#${run.id} · ${run.question} · ${run.model} · ${run.requested_at_utc}`;
+
+                    // Ein Klick verwendet dieselbe Lesefunktion wie die ID-Eingabe.
+                    button.addEventListener("click", () => loadDocRun(run.id));
+                    item.append(button);
+                    runHistory.append(item);
+                }
+
+                historyStatus.textContent = "";
+            } catch {
+                historyStatus.textContent = "Der Verlauf konnte nicht geladen werden.";
+            }
+        }
+
+        async function loadDocRun(id) {
+            // Verhindere, dass zwei Detailabrufe gleichzeitig die Ausgabe ändern.
+            if (loadRunButton.disabled) {
+                return;
+            }
+
+            runIdInput.value = String(id);
             runOutput.textContent = "Dokulauf wird geladen …";
             loadRunButton.disabled = true;
 
             try {
-                // Die ID steht in der URL. Ein GET-Aufruf braucht hier kein JSON.
-                const runId = encodeURIComponent(runIdInput.value);
+                const runId = encodeURIComponent(id);
                 const response = await fetch(`/doc-runs/${runId}`);
 
                 if (!response.ok) {
@@ -171,7 +220,15 @@
             } finally {
                 loadRunButton.disabled = false;
             }
+        }
+
+        loadRunForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            loadDocRun(runIdInput.value);
         });
+
+        // Zeige die letzten Läufe schon beim Öffnen der Startseite an.
+        loadRunHistory();
     </script>
 </body>
 </html>
