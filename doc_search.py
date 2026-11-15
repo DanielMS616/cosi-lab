@@ -9,6 +9,7 @@ from doc_prompt import build_doc_prompt, build_multi_doc_prompt, check_citations
 PROJECT_DOCS = (
     "docs/aufbau-hardware.md",
     "docs/aufbau-fernzugriff.md",
+    "docs/anleitung-berichtsexport.md",
 )
 
 
@@ -16,7 +17,7 @@ def question_to_terms(question):
     """Gewinnt Suchwörter aus einer Frage."""
     # Diese Wörter helfen bei unserer Dokusuche meist nicht weiter.
     stop_words = {
-        "wie", "was", "ist", "funktioniert", "der", "die", "das",
+        "wie", "was", "ist", "funktioniert", "der", "die", "das", "den",
         "ein", "eine", "im", "in", "mit", "und", "auf",
         # Der Projektname steht in mehreren Dokumenten. Er soll allein
         # keinen Treffer auslösen, wenn das eigentliche Thema fehlt.
