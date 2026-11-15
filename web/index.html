@@ -14,44 +14,106 @@
         <label>
             <input id="multi-source" type="checkbox">
             Bis zu zwei Fundstellen verwenden
-        </label>
+        </label><br>
+
+        <label for="provider">Modellanbieter</label>
+        <select id="provider">
+            <option value="gpt">GPT</option>
+            <option value="gemini">Gemini</option>
+        </select><br>
+
         <button type="submit">Vorschau anzeigen</button>
+        <button id="answer-button" type="submit">Mit Modell beantworten</button>
     </form>
 
     <h2>Promptvorschau</h2>
     <pre id="output" style="white-space: pre-wrap" aria-live="polite">Noch keine Frage gestellt.</pre>
 
+    <h2>Modellantwort</h2>
+    <pre id="answer-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Modell aufgerufen.</pre>
+
     <script>
         const form = document.getElementById("search-form");
         const question = document.getElementById("question");
         const multiSource = document.getElementById("multi-source");
+        const provider = document.getElementById("provider");
+        const answerButton = document.getElementById("answer-button");
         const output = document.getElementById("output");
+        const answerOutput = document.getElementById("answer-output");
+        const buttons = form.querySelectorAll("button");
 
         form.addEventListener("submit", async (event) => {
             // Die Seite bleibt offen. JavaScript schickt die Frage an die API.
             event.preventDefault();
-            output.textContent = "Suche läuft …";
+
+            // Nur der Antwortknopf darf einen Modellaufruf auslösen.
+            const wantsAnswer = event.submitter === answerButton;
+            const endpoint = wantsAnswer
+                ? "/doc-questions/answer"
+                : "/doc-questions/preview";
+            const target = wantsAnswer ? answerOutput : output;
+            const payload = {
+                question: question.value,
+                multi_source: multiSource.checked,
+            };
+
+            // Die Vorschau braucht keine Anbieterauswahl.
+            if (wantsAnswer) {
+                payload.provider = provider.value;
+            }
+
+            output.textContent = "";
+            answerOutput.textContent = "";
+            target.textContent = wantsAnswer
+                ? "Antwort wird erstellt …"
+                : "Suche läuft …";
+
+            // Verhindere einen weiteren Klick, solange die Anfrage läuft.
+            buttons.forEach(button => {
+                button.disabled = true;
+            });
 
             try {
-                const response = await fetch("/doc-questions/preview", {
+                const response = await fetch(endpoint, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        question: question.value,
-                        multi_source: multiSource.checked,
-                    }),
+                    body: JSON.stringify(payload),
                 });
 
                 if (!response.ok) {
-                    output.textContent = `Vorschau fehlgeschlagen (HTTP ${response.status}).`;
+                    // Zeige die Meldung der API, wenn sie als Text vorliegt.
+                    const error = await response.json().catch(() => ({}));
+                    target.textContent = typeof error.detail === "string"
+                        ? error.detail
+                        : `Anfrage fehlgeschlagen (HTTP ${response.status}).`;
                     return;
                 }
 
-                // textContent zeigt den Prompt als Text an, auch wenn er HTML-Zeichen enthält.
+                // textContent zeigt den Prompt als Text an, nicht als HTML.
                 const data = await response.json();
-                output.textContent = data.prompt ?? "Keine passende Fundstelle gefunden.";
+                output.textContent =
+                    data.prompt ?? "Keine passende Fundstelle gefunden.";
+
+                if (wantsAnswer) {
+                    if (data.answer === null) {
+                        answerOutput.textContent = "Kein Modell aufgerufen.";
+                    } else {
+                        const status = data.api_status
+                            ? `\nAPI-Status: ${data.api_status}`
+                            : "";
+                        answerOutput.textContent =
+                            `${data.answer}\n\nModell: ${data.model}\n` +
+                            `Dokulauf-ID: ${data.run_id}${status}`;
+                    }
+                }
             } catch {
-                output.textContent = "Die lokale API konnte nicht erreicht werden.";
+                target.textContent =
+                    "Die Antwort der lokalen API konnte nicht gelesen werden.";
+            } finally {
+                // Gib beide Buttons auch nach einem Fehler wieder frei.
+                buttons.forEach(button => {
+                    button.disabled = false;
+                });
             }
         });
     </script>
