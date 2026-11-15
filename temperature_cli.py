@@ -11,7 +11,7 @@ from temperature_prompt import build_temperature_prompt
 # Der Parser beschreibt, welche Angaben das Programm beim Start erwartet.
 parser = argparse.ArgumentParser(description="Zählt Temperaturüberschreitungen.")
 
-# Der Dateipfad ist eine Pflichtangabe und steht direkt hinter main.py.
+# Das erste Positionsargument ist der Pfad zur CSV-Datei.
 parser.add_argument("path", help="Pfad zur CSV-Datei")
 
 # Die Schwelle ist optional. argparse wandelt die Eingabe in eine Ganzzahl um.
@@ -83,7 +83,7 @@ else:
             print(prompt)
 
         if args.gpt or args.gemini:
-            from model_storage import initialize_database, save_model_run
+            from temperature_storage import initialize_database, save_model_run
 
             # Der Anbieter bestimmt nur Funktion, Modellname und Berichtstitel.
             if args.gpt:

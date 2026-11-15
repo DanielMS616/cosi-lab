@@ -2,7 +2,7 @@ import argparse
 import sqlite3
 
 from pathlib import Path
-from model_storage import load_model_run
+from temperature_storage import load_model_run
 
 
 def build_report_text(run):

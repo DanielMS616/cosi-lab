@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from model_storage import initialize_database, save_model_run
+from temperature_storage import initialize_database, save_model_run
 
 
 class ReportExportTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class ReportExportTests(unittest.TestCase):
 
         # Diese Testdatei liegt in tests/. parents[1] ist der Projektordner.
         # Der absolute Pfad findet das Skript auch aus dem temporären Ordner.
-        self.script = Path(__file__).resolve().parents[1] / "show_model_run.py"
+        self.script = Path(__file__).resolve().parents[1] / "show_temperature_run.py"
 
         # Lege einen Beispiel-Modelllauf an. Dafür ist kein API-Aufruf nötig.
         initialize_database(self.database)

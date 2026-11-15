@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from model_storage import initialize_database, load_model_run, save_model_run
+from temperature_storage import initialize_database, load_model_run, save_model_run
 
 
 class ModelStorageTests(unittest.TestCase):
