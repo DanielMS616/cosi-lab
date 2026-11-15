@@ -32,6 +32,16 @@
     <h2>Modellantwort</h2>
     <pre id="answer-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Modell aufgerufen.</pre>
 
+    <h2>Gespeicherten Dokulauf öffnen</h2>
+
+    <form id="load-run-form">
+        <label for="run-id">Dokulauf-ID</label>
+        <input id="run-id" type="number" min="1" step="1" required>
+        <button id="load-run-button" type="submit">Dokulauf laden</button>
+    </form>
+
+    <pre id="run-output" style="white-space: pre-wrap" aria-live="polite">Noch kein Dokulauf geladen.</pre>
+
     <script>
         const form = document.getElementById("search-form");
         const question = document.getElementById("question");
@@ -114,6 +124,52 @@
                 buttons.forEach(button => {
                     button.disabled = false;
                 });
+            }
+        });
+
+        const loadRunForm = document.getElementById("load-run-form");
+        const runIdInput = document.getElementById("run-id");
+        const loadRunButton = document.getElementById("load-run-button");
+        const runOutput = document.getElementById("run-output");
+
+        loadRunForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            runOutput.textContent = "Dokulauf wird geladen …";
+            loadRunButton.disabled = true;
+
+            try {
+                // Die ID steht in der URL. Ein GET-Aufruf braucht hier kein JSON.
+                const runId = encodeURIComponent(runIdInput.value);
+                const response = await fetch(`/doc-runs/${runId}`);
+
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    runOutput.textContent = typeof error.detail === "string"
+                        ? error.detail
+                        : `Abruf fehlgeschlagen (HTTP ${response.status}).`;
+                    return;
+                }
+
+                const run = await response.json();
+
+                // Die API liefert die damaligen Ausschnitte aus SQLite.
+                const sources = run.sources.map(source =>
+                    `${source.path}:${source.start_line}-${source.end_line}\n${source.text}`
+                ).join("\n\n");
+
+                runOutput.textContent = [
+                    `Dokulauf ${run.id} · ${run.model}`,
+                    `Frage: ${run.question}`,
+                    `Gesendeter Prompt:\n${run.prompt}`,
+                    `Gespeicherte Fundstellen:\n${sources}`,
+                    `Antwort:\n${run.response_text}`,
+                    `Erkannte Fundstellen: ${run.citations.cited.join(", ") || "keine"}`,
+                    `Unbekannte Fundstellen: ${run.citations.unknown.join(", ") || "keine"}`,
+                ].join("\n\n");
+            } catch {
+                runOutput.textContent = "Der Dokulauf konnte nicht geladen werden.";
+            } finally {
+                loadRunButton.disabled = false;
             }
         });
     </script>
