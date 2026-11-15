@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Literal
+from openai import APIConnectionError
 
 from doc_answer import answer_and_save_doc_question
 from doc_prompt import build_doc_prompt, build_multi_doc_prompt
@@ -66,13 +67,20 @@ def answer_doc_question(request: DocAnswerRequest):
     if not response["sources"]:
         return response
 
-    result = answer_and_save_doc_question(
-        response["question"],
-        response["prompt"],
-        response["sources"],
-        provider=request.provider,
-        database_path=DOC_DATABASE_PATH,
-    )
+    try:
+        result = answer_and_save_doc_question(
+            response["question"],
+            response["prompt"],
+            response["sources"],
+            provider=request.provider,
+            database_path=DOC_DATABASE_PATH,
+        )
+    except APIConnectionError as error:
+        # Gib dem Client eine verständliche Meldung ohne SDK-Details.
+        raise HTTPException(
+            status_code=502,
+            detail="Der Modellanbieter ist derzeit nicht erreichbar.",
+        ) from error
 
     # Ergänze die Felder erst, wenn die Antwort samt Lauf-ID vorliegt.
     response.update(

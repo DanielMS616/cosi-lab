@@ -6,6 +6,8 @@ import sys
 from types import ModuleType
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
+from httpx import Request
+from openai import APIConnectionError
 
 from doc_storage import load_doc_run
 from doc_api import app
@@ -127,3 +129,31 @@ class DocApiTests(unittest.TestCase):
         self.assertIsNone(data["run_id"])
         answer_and_save.assert_not_called()
         self.assertFalse(self.database_path.exists())
+
+    def test_provider_connection_error_returns_502_without_saving(self):
+        # Das Request-Objekt beschreibt nur eine Anfrage. Es wird nichts gesendet.
+        error = APIConnectionError(
+            request=Request("POST", "https://example.invalid")
+        )
+
+        # Die Suche läuft normal. Erst beim Modellaufruf werfen wir den Fehler.
+        fake_gpt = ModuleType("model_gpt")
+        fake_gpt.generate_gpt_report = Mock(side_effect=error)
+
+        with (
+            patch.dict(sys.modules, {"model_gpt": fake_gpt}),
+            TestClient(app, raise_server_exceptions=False) as client,
+        ):
+            response = client.post(
+                "/doc-questions/answer",
+                json={"question": "Welche CPU hat Cosi-Lab?", "provider": "gpt"},
+            )
+
+        # So stellen wir sicher, dass die Anfrage wirklich bis zum Modell kam.
+        fake_gpt.generate_gpt_report.assert_called_once()
+        self.assertFalse(self.database_path.exists())
+        self.assertEqual(response.status_code, 502, response.text)
+        self.assertEqual(
+            response.json(),
+            {"detail": "Der Modellanbieter ist derzeit nicht erreichbar."},
+        )
