@@ -185,10 +185,13 @@ def main():
         action="store_true",
         help="Zeigt den Modellprompt für eine Frage an.",
     )
-    parser.add_argument(
-        "--gpt",
-        action="store_true",
-        help="Sendet die Frage und die gefundene Textstelle an GPT.",
+    # Beide Schalter sind optional, dürfen aber nicht zusammen gesetzt werden.
+    model_options = parser.add_mutually_exclusive_group()
+    model_options.add_argument(
+        "--gpt", action="store_true", help="Beantwortet die Frage mit GPT."
+    )
+    model_options.add_argument(
+        "--gemini", action="store_true", help="Beantwortet die Frage mit Gemini."
     )
     parser.add_argument(
         "--also-search",
@@ -206,6 +209,7 @@ def main():
 
     # Die Projektdoku wird immer als Fragensuche ausgewertet.
     use_question_search = args.question or args.project_docs
+    use_model = args.gpt or args.gemini
 
     if args.multi_source and not use_question_search:
         parser.error("--multi-source setzt --question oder --project-docs voraus.")
@@ -213,8 +217,11 @@ def main():
         parser.error("--project-docs wird ohne Dateipfad und --also-search verwendet.")
     if args.path is None and not args.project_docs:
         parser.error("Gib einen Dateipfad oder --project-docs an.")
-    if (args.show_prompt or args.gpt or args.also_search) and not use_question_search:
-        parser.error("--show-prompt, --gpt und --also-search setzen --question voraus.")
+    if (args.show_prompt or use_model or args.also_search) and not use_question_search:
+        parser.error(
+            "--show-prompt, --gpt und --gemini brauchen --question oder --project-docs. "
+            "--also-search braucht einen Dateipfad und --question."
+        )
 
     if use_question_search:
         paths = PROJECT_DOCS if args.project_docs else [args.path] + args.also_search
@@ -231,7 +238,7 @@ def main():
         print("Keine passende Fundstelle gefunden.")
         return
 
-    if args.show_prompt or args.gpt:
+    if args.show_prompt or use_model:
         # Vorschau und Modellaufruf verwenden denselben Prompt.
         if len(hits) == 1:
             prompt = build_doc_prompt(args.phrase, hits[0])
@@ -241,18 +248,29 @@ def main():
         if args.show_prompt:
             print(prompt)
 
-        if args.gpt:
-            # Lade das API-Modul erst, wenn wirklich eine Anfrage ansteht.
-            from model_gpt import generate_gpt_report
+        if use_model:
+            # Lade erst nach einem Treffer den Adapter des gewählten Anbieters.
+            if args.gpt:
+                from model_gpt import generate_gpt_report
 
-            # Dokufragen brauchen Platz für Antworten mit mehreren Quellenangaben.
-            result = generate_gpt_report(prompt, max_output_tokens=240)
-            print("\nGPT-Antwort:")
+                generate_answer = generate_gpt_report
+                provider = "GPT"
+            else:
+                from model_gemini import generate_gemini_report
+
+                generate_answer = generate_gemini_report
+                provider = "Gemini"
+
+            # Beide Anbieter erhalten denselben fertigen Prompt.
+            result = generate_answer(prompt, max_output_tokens=240)
+            print(f"\n{provider}-Antwort:")
             print(result["text"])
 
-            print(f"\nAPI-Status: {result['status']}")
-            if result["incomplete_reason"] is not None:
-                print(f"Grund für unvollständige Antwort: {result['incomplete_reason']}")
+            # Unser GPT-Adapter liefert diese Statusfelder bereits.
+            if args.gpt:
+                print(f"\nAPI-Status: {result['status']}")
+                if result["incomplete_reason"] is not None:
+                    print(f"Grund für unvollständige Antwort: {result['incomplete_reason']}")
 
             # Vergleiche die Zitate in der Antwort mit denselben Treffern,
             # aus denen wir den Prompt gebaut haben.

@@ -168,3 +168,54 @@ class DocPromptTests(unittest.TestCase):
             self.assertIn("Fundstellen, die nicht im Prompt standen:\n", output.getvalue())
             self.assertIn(f"- {unknown}\n", output.getvalue())
             self.assertNotIn(f"- {known}\n", output.getvalue())
+
+
+    def test_gpt_and_gemini_receive_the_same_doc_prompt(self):
+        """Der Modellschalter ändert den Anbieter, aber nicht den Prompt."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "hardware.md"
+            path.write_text("CPU: Intel Core i5-8500\n", encoding="utf-8")
+            question = "Welche CPU ist verbaut?"
+            answer = f"Intel Core i5-8500 (Fundstelle: {path}:1-1)."
+
+            # Beide Testmodule merken sich ihre Aufrufe. Sie senden nichts.
+            fake_gpt = ModuleType("model_gpt")
+            gpt_call = fake_gpt.generate_gpt_report = Mock(return_value={
+                "text": answer,
+                "status": "completed",
+                "incomplete_reason": None,
+            })
+            fake_gemini = ModuleType("model_gemini")
+            gemini_call = fake_gemini.generate_gemini_report = Mock(
+                return_value={"text": answer}
+            )
+
+            # Frage, Datei und Suchart bleiben gleich. Nur der Schalter wechselt.
+            argv = ["doc_search.py", str(path), question, "--question"]
+            gemini_output = StringIO()
+
+            with patch.dict(sys.modules, {
+                "model_gpt": fake_gpt,
+                "model_gemini": fake_gemini,
+            }):
+                with patch.object(sys, "argv", argv + ["--gpt"]), redirect_stdout(StringIO()):
+                    main()
+
+                gpt_call.assert_called_once()
+                gemini_call.assert_not_called()
+
+                with patch.object(sys, "argv", argv + ["--gemini"]), redirect_stdout(gemini_output):
+                    main()
+
+            # args[0] ist der Prompt, den der GPT-Adapter tatsächlich erhalten hat.
+            prompt = gpt_call.call_args.args[0]
+            self.assertIn(f"Fundstelle: {path}:1-1\n", prompt)
+            gpt_call.assert_called_once_with(prompt, max_output_tokens=240)
+            gemini_call.assert_called_once_with(prompt, max_output_tokens=240)
+
+            # Auch die Gemini-Antwort läuft durch die gemeinsame Zitatprüfung.
+            self.assertIn("Gemini-Antwort:", gemini_output.getvalue())
+            self.assertIn(
+                "Alle erkannten Fundstellen standen im Prompt.",
+                gemini_output.getvalue(),
+            )

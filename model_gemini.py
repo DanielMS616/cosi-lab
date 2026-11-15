@@ -9,7 +9,7 @@ from google.genai import types
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
-def generate_gemini_report(prompt):
+def generate_gemini_report(prompt, *, max_output_tokens=120):
     """Sendet den Temperaturprompt an Gemini und gibt die Antwort zurück."""
 
     # Lade den Gemini-Schlüssel aus der .env neben dieser Datei.
@@ -24,7 +24,7 @@ def generate_gemini_report(prompt):
     response = client.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=120),
+        config=types.GenerateContentConfig(max_output_tokens=max_output_tokens),
     )
 
     report = response.text
