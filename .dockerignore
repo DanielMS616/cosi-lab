@@ -1,0 +1,9 @@
+# Lokale Zugangsdaten und Laufdaten bleiben außerhalb des Builds.
+.env*
+data/
+reports/
+
+# Die Umgebung im Image wird neu aufgebaut.
+.venv/
+.git/
+**/__pycache__/
