@@ -1,6 +1,7 @@
 services:
   api:
     build: .
+    restart: unless-stopped
 
     # Übergibt die vorhandenen API-Schlüssel erst beim Containerstart.
     env_file: .env
