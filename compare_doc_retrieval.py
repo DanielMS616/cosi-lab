@@ -1,4 +1,5 @@
 import re
+import argparse
 
 from sentence_transformers import SentenceTransformer
 
@@ -36,7 +37,33 @@ def rank_keyword_chunks(chunks, question):
     return ranked
 
 
-def main():
+def split_hardware_nodes(chunk):
+    """Macht einzelne Einträge des Hardware-Diagramms durchsuchbar."""
+    if chunk["path"] != "docs/aufbau-hardware.md":
+        return [chunk]
+
+    lines = chunk["text"].split("\n")
+    if lines[0].strip() != "```mermaid":
+        return [chunk]
+
+    nodes = []
+    for line_number, line in enumerate(lines, start=chunk["start_line"]):
+        # Erkenne Einträge wie RAM["16 GB DDR4 (2 Module)"].
+        # Verbindungen wie Board --- RAM sind keine eigenen Einträge.
+        if re.fullmatch(r'[A-Za-z_]\w*\["[^"]+"\]', line.strip()):
+            nodes.append(
+                {
+                    **chunk,
+                    "start_line": line_number,
+                    "end_line": line_number,
+                    "text": line,
+                }
+            )
+
+    return nodes or [chunk]
+
+
+def main(*, hardware_nodes=False):
     """Vergleicht Wortsuche und Embeddings auf denselben Textabschnitten."""
     model = SentenceTransformer(MODEL_NAME, device="cpu")
 
@@ -54,14 +81,15 @@ def main():
 
     for path in EXPERIMENT_DOCS:
         for chunk in split_document(path):
-            # Übernimm vollständige Abschnitte oder ihre passenden Teilstücke.
-            chunks.extend(
-                split_chunk_by_lines(
-                    chunk,
-                    count_tokens,
-                    max_tokens=model.max_seq_length,
+            candidates = split_hardware_nodes(chunk) if hardware_nodes else [chunk]
+            for candidate in candidates:
+                chunks.extend(
+                    split_chunk_by_lines(
+                        candidate,
+                        count_tokens,
+                        max_tokens=model.max_seq_length,
+                    )
                 )
-            )
 
     if not chunks:
         print("Keine Dokumentabschnitte vorhanden.")
@@ -125,4 +153,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Vergleicht zwei Dokussuchen.")
+    parser.add_argument(
+        "--hardware-nodes",
+        action="store_true",
+        help="Bewertet die Einträge des Hardware-Diagramms einzeln.",
+    )
+    main(hardware_nodes=parser.parse_args().hardware_nodes)
