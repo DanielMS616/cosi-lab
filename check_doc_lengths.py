@@ -1,7 +1,7 @@
 from transformers import AutoTokenizer
 
 from doc_chunks import split_document, split_chunk_by_lines
-from doc_search import PROJECT_DOCS
+from doc_experiment_config import EXPERIMENT_DOCS
 
 
 MODEL_NAME = "intfloat/multilingual-e5-small"
@@ -31,7 +31,7 @@ def main():
     too_long_after = 0
     longest_after = 0
 
-    for path in PROJECT_DOCS:
+    for path in EXPERIMENT_DOCS:
         for chunk in split_document(path):
             total_before += 1
             original_tokens = count_tokens(chunk["text"])

@@ -1,9 +1,13 @@
-from pathlib import Path
+import re
 
 from sentence_transformers import SentenceTransformer
 
-from doc_search import PROJECT_DOCS
+from doc_chunks import split_document, split_chunk_by_lines
+from doc_experiment_config import EXPERIMENT_DOCS
+from doc_search import question_to_terms
 
+
+MODEL_NAME = "intfloat/multilingual-e5-small"
 
 QUESTIONS = (
     "Welche CPU hat Cosi-Lab?",
@@ -14,56 +18,110 @@ QUESTIONS = (
 )
 
 
-def collect_excerpts(paths):
-    """Baut dieselben Textfenster wie die Wortsuche."""
-    excerpts = []
-    for path in paths:
-        lines = Path(path).read_text(encoding="utf-8").splitlines()
-        for end_line in range(1, len(lines) + 1):
-            start_line = max(1, end_line - 2)
-            text = "\n".join(lines[start_line - 1 : end_line])
-            excerpts.append((path, start_line, end_line, text))
-    return excerpts
+def rank_keyword_chunks(chunks, question):
+    """Sortiert Abschnitte nach der Anzahl unterschiedlicher Suchworttreffer."""
+    terms = set(question_to_terms(question))
+    ranked = []
+
+    for index, chunk in enumerate(chunks):
+        words = set(re.findall(r"\w+", chunk["text"].casefold()))
+        score = len(terms & words)
+
+        # Abschnitte ohne gemeinsames Suchwort zählen nicht als Treffer.
+        if score > 0:
+            ranked.append((index, score))
+
+    # Höchster Wert zuerst. Bei Gleichstand bleibt die Reihenfolge erhalten.
+    ranked.sort(key=lambda hit: hit[1], reverse=True)
+    return ranked
 
 
 def main():
-    excerpts = collect_excerpts(PROJECT_DOCS)
-    model = SentenceTransformer("intfloat/multilingual-e5-small", device="cpu")
+    """Vergleicht Wortsuche und Embeddings auf denselben Textabschnitten."""
+    model = SentenceTransformer(MODEL_NAME, device="cpu")
 
-    # Dokumentausschnitte nur einmal berechnen und für alle Fragen verwenden.
+    def count_tokens(text):
+        # Zähle einschließlich Präfix und Spezialtokens, ohne Text abzuschneiden.
+        encoded = model.tokenizer(
+            f"passage: {text}",
+            add_special_tokens=True,
+            truncation=False,
+            verbose=False,
+        )
+        return len(encoded["input_ids"])
+
+    chunks = []
+
+    for path in EXPERIMENT_DOCS:
+        for chunk in split_document(path):
+            # Übernimm vollständige Abschnitte oder ihre passenden Teilstücke.
+            chunks.extend(
+                split_chunk_by_lines(
+                    chunk,
+                    count_tokens,
+                    max_tokens=model.max_seq_length,
+                )
+            )
+
+    if not chunks:
+        print("Keine Dokumentabschnitte vorhanden.")
+        return
+
+    print(f"Suchabschnitte: {len(chunks)}")
+    print(f"Tokenlimit: {model.max_seq_length}")
+
+    # Berechne die Dokumentvektoren einmal für alle Fragen.
     passage_vectors = model.encode(
-        [f"passage: {text}" for _, _, _, text in excerpts],
+        [f"passage: {chunk['text']}" for chunk in chunks],
         normalize_embeddings=True,
     )
+
     question_vectors = model.encode(
         [f"query: {question}" for question in QUESTIONS],
         normalize_embeddings=True,
     )
 
-    for question, question_vector in zip(QUESTIONS, question_vectors, strict=True):
-        # Berechne für jeden Ausschnitt seine Ähnlichkeit mit dieser Frage.
-        scores = passage_vectors @ question_vector
+    # Zunächst zeigen wir nur den ersten Treffer jedes Verfahrens.
+    top_k = 1
 
-        # Sortiere die Positionen der Ausschnitte nach ihrem Ähnlichkeitswert.
-        # reverse=True bedeutet: Der höchste Wert steht zuerst.
+    for question, question_vector in zip(
+        QUESTIONS, question_vectors, strict=True
+    ):
+        print(f"\n--- {question} ---")
+
+        keyword_hits = rank_keyword_chunks(chunks, question)
+
+        # Vergleiche den Fragevektor mit sämtlichen Dokumentvektoren.
+        scores = passage_vectors @ question_vector
         ranked_indices = sorted(
             range(len(scores)),
             key=lambda index: scores[index],
             reverse=True,
         )
+        embedding_hits = [
+            (index, round(float(scores[index]), 3))
+            for index in ranked_indices[:top_k]
+        ]
 
-        print(f"\n--- {question} ---")
+        # Verwende für beide Verfahren dieselbe Darstellung.
+        for title, hits in (
+            ("WORTSUCHE – Anzahl Suchworttreffer", keyword_hits),
+            ("EMBEDDINGS – Kosinusähnlichkeit", embedding_hits),
+        ):
+            print(f"\n{title}")
 
-        # Zeige die ersten drei Positionen der sortierten Liste.
-        # enumerate nummeriert die Treffer für die Ausgabe ab 1.
-        for rank, index in enumerate(ranked_indices[:3], start=1):
-            path, start, end, text = excerpts[index]
+            if not hits:
+                print("Kein Treffer.")
+                continue
 
-            print(
-                f"\nPlatz {rank}: {path}:{start}-{end}"
-                f" | Ähnlichkeit: {scores[index]:.3f}"
-            )
-            print(text)
+            for rank, (index, score) in enumerate(hits[:top_k], start=1):
+                chunk = chunks[index]
+                print(
+                    f"Platz {rank}: {chunk['path']}:"
+                    f"{chunk['start_line']}-{chunk['end_line']}"
+                    f" | Wert: {score}"
+                )
+                print(chunk["text"])
 
 
 if __name__ == "__main__":
