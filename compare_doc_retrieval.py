@@ -18,6 +18,14 @@ QUESTIONS = (
     "Wie viel RAM kann ich maximal einbauen?",
 )
 
+HARDWARE_EVIDENCE = {
+    "Welche CPU hat Cosi-Lab?": 'CPU["Intel Core i5-8500 (6 Kerne)"]',
+    "Wie viele Speicherriegel sind verbaut?": 'RAM["16 GB DDR4 (2 Module)"]',
+    "Auf welchem Laufwerk liegt das Betriebssystem und wie groß ist es?": (
+        'HDD["Toshiba-HDD (320 GB, Ubuntu-Systemdisk)"]'
+    ),
+}
+
 
 def rank_keyword_chunks(chunks, question):
     """Sortiert Abschnitte nach der Anzahl unterschiedlicher Suchworttreffer."""
@@ -63,7 +71,28 @@ def split_hardware_nodes(chunk):
     return nodes or [chunk]
 
 
-def main(*, hardware_nodes=False):
+def show_evidence_rank(question, chunks, hits):
+    """Zeigt den ersten Rang, auf dem die bekannte Belegzeile vorkommt."""
+    evidence = HARDWARE_EVIDENCE.get(question)
+    if evidence is None:
+        return
+
+    for rank, (index, score) in enumerate(hits, start=1):
+        chunk = chunks[index]
+        if (
+            chunk["path"] == "docs/aufbau-hardware.md"
+            and evidence in chunk["text"]
+        ):
+            print(
+                f"Belegrang: Platz {rank} von {len(hits)} | Wert: {score}"
+                f" | {chunk['path']}:{chunk['start_line']}-{chunk['end_line']}"
+            )
+            return
+
+    print("Belegrang: Der bekannte Beleg ist nicht unter den Treffern.")
+
+
+def main(*, hardware_nodes=False, evidence_ranks=False):
     """Vergleicht Wortsuche und Embeddings auf denselben Textabschnitten."""
     model = SentenceTransformer(MODEL_NAME, device="cpu")
 
@@ -128,7 +157,7 @@ def main(*, hardware_nodes=False):
         )
         embedding_hits = [
             (index, round(float(scores[index]), 3))
-            for index in ranked_indices[:top_k]
+            for index in ranked_indices
         ]
 
         # Verwende für beide Verfahren dieselbe Darstellung.
@@ -137,6 +166,9 @@ def main(*, hardware_nodes=False):
             ("EMBEDDINGS – Kosinusähnlichkeit", embedding_hits),
         ):
             print(f"\n{title}")
+
+            if evidence_ranks:
+                show_evidence_rank(question, chunks, hits)
 
             if not hits:
                 print("Kein Treffer.")
@@ -159,4 +191,10 @@ if __name__ == "__main__":
         action="store_true",
         help="Bewertet die Einträge des Hardware-Diagramms einzeln.",
     )
-    main(hardware_nodes=parser.parse_args().hardware_nodes)
+    parser.add_argument(
+        "--evidence-ranks",
+        action="store_true",
+        help="Zeigt den Rang der bekannten CPU-, RAM- und HDD-Belege.",
+    )
+    args = parser.parse_args()
+    main(hardware_nodes=args.hardware_nodes, evidence_ranks=args.evidence_ranks)
