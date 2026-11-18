@@ -1,3 +1,5 @@
+Der Fernzugriff auf Cosi-Lab wurde von unterwegs über einen Handy-Hotspot und das Bibliotheks-WLAN geprüft.
+
 ```mermaid
 flowchart TB
     Mac["MacBook Air (WireGuard-Client)"]
