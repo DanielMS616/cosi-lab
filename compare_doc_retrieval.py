@@ -18,6 +18,15 @@ QUESTIONS = (
     "Wie viel RAM kann ich maximal einbauen?",
 )
 
+FRESH_QUESTIONS = (
+    "Welche Taste muss ich vor Ort drücken, damit der Rechner weiter startet?",
+    "Über welche beiden Internetzugänge wurde der Fernzugriff von unterwegs getestet?",
+    "Was passiert beim Export, wenn am Ziel schon eine Datei liegt?",
+    "Wofür stehen die Ports 8001 und 8000 beim SSH-Tunnel?",
+    "Welches Laufwerk ist in der Hardware-Doku mit auffälligen SMART-Werten markiert?",
+    "Welchen konkreten SMART-Wert meldet die Intel-NVMe für Medienfehler?",
+)
+
 HARDWARE_EVIDENCE = {
     "Welche CPU hat Cosi-Lab?": 'CPU["Intel Core i5-8500 (6 Kerne)"]',
     "Wie viele Speicherriegel sind verbaut?": 'RAM["16 GB DDR4 (2 Module)"]',
@@ -92,7 +101,7 @@ def show_evidence_rank(question, chunks, hits):
     print("Belegrang: Der bekannte Beleg ist nicht unter den Treffern.")
 
 
-def main(*, hardware_nodes=False, evidence_ranks=False):
+def main(*, hardware_nodes=False, evidence_ranks=False, questions=QUESTIONS):
     """Vergleicht Wortsuche und Embeddings auf denselben Textabschnitten."""
     model = SentenceTransformer(MODEL_NAME, device="cpu")
 
@@ -134,7 +143,7 @@ def main(*, hardware_nodes=False, evidence_ranks=False):
     )
 
     question_vectors = model.encode(
-        [f"query: {question}" for question in QUESTIONS],
+        [f"query: {question}" for question in questions],
         normalize_embeddings=True,
     )
 
@@ -142,7 +151,7 @@ def main(*, hardware_nodes=False, evidence_ranks=False):
     top_k = 1
 
     for question, question_vector in zip(
-        QUESTIONS, question_vectors, strict=True
+        questions, question_vectors, strict=True
     ):
         print(f"\n--- {question} ---")
 
@@ -196,5 +205,14 @@ if __name__ == "__main__":
         action="store_true",
         help="Zeigt den Rang der bekannten CPU-, RAM- und HDD-Belege.",
     )
+    parser.add_argument(
+        "--fresh-questions",
+        action="store_true",
+        help="Verwendet den neuen Fragensatz für den Vergleich.",
+    )
     args = parser.parse_args()
-    main(hardware_nodes=args.hardware_nodes, evidence_ranks=args.evidence_ranks)
+    main(
+        hardware_nodes=args.hardware_nodes,
+        evidence_ranks=args.evidence_ranks,
+        questions=FRESH_QUESTIONS if args.fresh_questions else QUESTIONS,
+    )
