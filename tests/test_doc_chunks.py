@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from doc_chunks import split_document
+from doc_chunks import split_document, split_chunk_by_lines
 
 
 class DocChunksTests(unittest.TestCase):
@@ -83,3 +83,71 @@ class DocChunksTests(unittest.TestCase):
         self.assertEqual(chunks[0]["heading"], "Export")
         self.assertEqual(chunks[0]["start_line"], 3)
         self.assertEqual(chunks[0]["end_line"], 3)
+
+    def test_parts_keep_all_lines_and_fit_budget(self):
+        """Alle Zeilen bleiben erhalten und jeder Teil hält das Testbudget ein."""
+        chunk = {
+            "path": "probe.md",
+            "heading": "Beispiel",
+            "start_line": 10,
+            "end_line": 12,
+            "text": "eins zwei\ndrei vier\nfünf sechs",
+        }
+
+        def count_tokens(text):
+            # Einfaches Zählverfahren für diesen Test:
+            # Jedes Wort zählt einmal, dazu kommen zwei feste Zusatzkosten.
+            # Das ersetzt hier den echten Tokenizer.
+            return len(text.split()) + 2
+
+        parts = split_chunk_by_lines(chunk, count_tokens, max_tokens=6)
+
+        self.assertEqual(len(parts), 2)
+        self.assertEqual(
+            [
+                (part["start_line"], part["end_line"])
+                for part in parts
+            ],
+            [(10, 11), (12, 12)],
+        )
+
+        # Zusammengesetzt müssen die Teile wieder den Originaltext ergeben.
+        self.assertEqual(
+            "\n".join(part["text"] for part in parts),
+            chunk["text"],
+        )
+
+        for part in parts:
+            self.assertLessEqual(count_tokens(part["text"]), 6)
+            self.assertEqual(part["path"], chunk["path"])
+            self.assertEqual(part["heading"], chunk["heading"])
+
+    def test_short_chunk_is_kept_unchanged(self):
+        """Ein kurzer Abschnitt wird als vollständige Kopie geliefert."""
+        chunk = {
+            "path": "probe.md",
+            "heading": "Beispiel",
+            "start_line": 4,
+            "end_line": 5,
+            "text": "eins\nzwei",
+        }
+
+        # len zählt hier Zeichen und dient als einfache Test-Zählfunktion.
+        parts = split_chunk_by_lines(chunk, len, max_tokens=20)
+
+        self.assertEqual(parts, [chunk])
+        self.assertIsNot(parts[0], chunk)
+
+    def test_single_long_line_raises(self):
+        """Eine einzelne überlange Zeile erzeugt eine verständliche Meldung."""
+        chunk = {
+            "path": "probe.md",
+            "heading": "Beispiel",
+            "start_line": 8,
+            "end_line": 8,
+            "text": "zu lang",
+        }
+
+        # Sieben Zeichen passen nicht in das kleine Testbudget von drei.
+        with self.assertRaisesRegex(ValueError, "Zeile 8"):
+            split_chunk_by_lines(chunk, len, max_tokens=3)

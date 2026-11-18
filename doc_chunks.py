@@ -77,3 +77,50 @@ def split_document(path):
         )
 
     return chunks
+
+
+def split_chunk_by_lines(chunk, count_tokens, max_tokens):
+    """Teilt einen Abschnitt nach vollständigen Zeilen innerhalb des Limits."""
+    lines = chunk["text"].split("\n")
+    parts = []
+
+    # buffer sammelt die Zeilen des gerade entstehenden Teils.
+    buffer = []
+    start_line = chunk["start_line"]
+
+    for line_number, line in enumerate(lines, start=chunk["start_line"]):
+        # Eine einzelne überlange Zeile können wir mit dieser Methode
+        # nicht weiter teilen. Wir schneiden ihren Inhalt nicht ab.
+        if count_tokens(line) > max_tokens:
+            raise ValueError(
+                f"{chunk['path']}, Zeile {line_number}: "
+                f"Eine einzelne Zeile überschreitet "
+                f"das Tokenlimit {max_tokens}."
+            )
+
+        # Prüfe, ob die nächste Zeile noch zum aktuellen Teil passt.
+        candidate = "\n".join(buffer + [line])
+
+        if buffer and count_tokens(candidate) > max_tokens:
+            # Kopiere die Metadaten und passe Text und Zeilenbereich an.
+            # Der ursprüngliche Abschnitt bleibt unverändert.
+            part = chunk.copy()
+            part["start_line"] = start_line
+            part["end_line"] = line_number - 1
+            part["text"] = "\n".join(buffer)
+            parts.append(part)
+
+            # Die aktuelle Zeile beginnt jetzt den nächsten Teil.
+            buffer = []
+            start_line = line_number
+
+        buffer.append(line)
+
+    # Übernimm die zuletzt gesammelten Zeilen.
+    part = chunk.copy()
+    part["start_line"] = start_line
+    part["end_line"] = chunk["end_line"]
+    part["text"] = "\n".join(buffer)
+    parts.append(part)
+
+    return parts

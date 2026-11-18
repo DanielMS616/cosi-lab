@@ -1,6 +1,6 @@
 from transformers import AutoTokenizer
 
-from doc_chunks import split_document
+from doc_chunks import split_document, split_chunk_by_lines
 from doc_search import PROJECT_DOCS
 
 
@@ -9,58 +9,72 @@ MAX_INPUT_TOKENS = 512
 
 
 def main():
-    """Prüft die vollständige Tokenlänge der vorbereiteten Abschnitte."""
-    # Verwende den bereits heruntergeladenen Tokenizer.
-    # Die Modellgewichte werden zum Zählen nicht benötigt.
+    """Prüft die Tokenlängen vor und nach der zeilenweisen Aufteilung."""
     tokenizer = AutoTokenizer.from_pretrained(
         MODEL_NAME,
         local_files_only=True,
     )
 
-    total = 0
-    too_long = 0
-    longest = 0
+    def count_tokens(text):
+        # Diese Funktion zählt die vollständige spätere Modelleingabe.
+        # split_chunk_by_lines() kann sie für jeden Kandidaten aufrufen.
+        encoded = tokenizer(
+            f"passage: {text}",
+            add_special_tokens=True,
+            truncation=False,
+            verbose=False,
+        )
+        return len(encoded["input_ids"])
+
+    total_before = 0
+    total_after = 0
+    too_long_after = 0
+    longest_after = 0
 
     for path in PROJECT_DOCS:
         for chunk in split_document(path):
-            # Messe denselben Text, den wir später einbetten möchten.
-            # Die separat gespeicherte Überschrift fügen wir hier nicht hinzu.
-            input_text = f"passage: {chunk['text']}"
+            total_before += 1
+            original_tokens = count_tokens(chunk["text"])
 
-            encoded = tokenizer(
-                input_text,
-                add_special_tokens=True,
-                truncation=False,
-                # Überlängen melden wir unten selbst.
-                verbose=False,
+            # Übergib die Zählfunktion selbst, ohne sie hier aufzurufen.
+            # Die Aufteilung nutzt sie zum Prüfen möglicher Teilabschnitte.
+            parts = split_chunk_by_lines(
+                chunk,
+                count_tokens,
+                max_tokens=MAX_INPUT_TOKENS,
             )
 
-            # input_ids enthält eine Token-ID pro Token.
-            # Die Länge dieser Liste ist die gesuchte Tokenzahl.
-            token_count = len(encoded["input_ids"])
+            total_after += len(parts)
 
-            total += 1
-            longest = max(longest, token_count)
-
-            if token_count > MAX_INPUT_TOKENS:
-                too_long += 1
-
+            if len(parts) > 1:
                 print(
-                    f"ZU LANG: {chunk['path']}:"
+                    f"\nGETEILT: {chunk['path']}:"
                     f"{chunk['start_line']}-{chunk['end_line']}"
                 )
                 print(
-                    f"  {token_count} Tokens"
-                    f" bei einem Limit von {MAX_INPUT_TOKENS}"
-                )
-                print(
-                    "  Überschrift:",
-                    chunk["heading"] or "(ohne Überschrift)",
+                    f"  Vorher: {original_tokens} Tokens"
+                    f" | Danach: {len(parts)} Teile"
                 )
 
-    print(f"\nGeprüfte Abschnitte: {total}")
-    print(f"Davon zu lang: {too_long}")
-    print(f"Längster Abschnitt: {longest} Tokens")
+            # Messe alle fertigen Teile mit demselben echten Tokenizer.
+            for part in parts:
+                token_count = count_tokens(part["text"])
+                longest_after = max(longest_after, token_count)
+
+                if token_count > MAX_INPUT_TOKENS:
+                    too_long_after += 1
+
+                if len(parts) > 1:
+                    print(
+                        f"  {part['path']}:"
+                        f"{part['start_line']}-{part['end_line']}"
+                        f" | {token_count} Tokens"
+                    )
+
+    print(f"\nAbschnitte vorher: {total_before}")
+    print(f"Abschnitte nachher: {total_after}")
+    print(f"Davon weiterhin zu lang: {too_long_after}")
+    print(f"Längster Abschnitt danach: {longest_after} Tokens")
 
 
 if __name__ == "__main__":
