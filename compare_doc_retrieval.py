@@ -101,7 +101,7 @@ def show_evidence_rank(question, chunks, hits):
     print("Belegrang: Der bekannte Beleg ist nicht unter den Treffern.")
 
 
-def main(*, hardware_nodes=False, evidence_ranks=False, questions=QUESTIONS):
+def main(*, hardware_nodes=False, top_k=1, evidence_ranks=False, questions=QUESTIONS):
     """Vergleicht Wortsuche und Embeddings auf denselben Textabschnitten."""
     model = SentenceTransformer(MODEL_NAME, device="cpu")
 
@@ -146,9 +146,6 @@ def main(*, hardware_nodes=False, evidence_ranks=False, questions=QUESTIONS):
         [f"query: {question}" for question in questions],
         normalize_embeddings=True,
     )
-
-    # Zunächst zeigen wir nur den ersten Treffer jedes Verfahrens.
-    top_k = 1
 
     for question, question_vector in zip(
         questions, question_vectors, strict=True
@@ -210,9 +207,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Verwendet den neuen Fragensatz für den Vergleich.",
     )
+    parser.add_argument("--top-k", type=int, choices=(1, 3), default=1)
     args = parser.parse_args()
     main(
         hardware_nodes=args.hardware_nodes,
         evidence_ranks=args.evidence_ranks,
         questions=FRESH_QUESTIONS if args.fresh_questions else QUESTIONS,
+        top_k=args.top_k,
     )
