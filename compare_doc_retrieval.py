@@ -1,11 +1,12 @@
-import re
 import argparse
+import re
 
 from sentence_transformers import SentenceTransformer
 
-from doc_chunks import split_document, split_chunk_by_lines
+from doc_chunks import split_chunk_by_lines, split_document
 from doc_experiment_config import EXPERIMENT_DOCS
 from doc_search import question_to_terms
+from e5_retrieval import retrieve_e5
 
 
 MODEL_NAME = "intfloat/multilingual-e5-small"
@@ -80,21 +81,21 @@ def split_hardware_nodes(chunk):
     return nodes or [chunk]
 
 
-def show_evidence_rank(question, chunks, hits):
+def show_evidence_rank(question, hits):
     """Zeigt den ersten Rang, auf dem die bekannte Belegzeile vorkommt."""
     evidence = HARDWARE_EVIDENCE.get(question)
     if evidence is None:
         return
 
-    for rank, (index, score) in enumerate(hits, start=1):
-        chunk = chunks[index]
+    for rank, hit in enumerate(hits, start=1):
         if (
-            chunk["path"] == "docs/aufbau-hardware.md"
-            and evidence in chunk["text"]
+            hit["path"] == "docs/aufbau-hardware.md"
+            and evidence in hit["text"]
         ):
+            score = round(hit["score"], 3)
             print(
                 f"Belegrang: Platz {rank} von {len(hits)} | Wert: {score}"
-                f" | {chunk['path']}:{chunk['start_line']}-{chunk['end_line']}"
+                f" | {hit['path']}:{hit['start_line']}-{hit['end_line']}"
             )
             return
 
@@ -142,31 +143,37 @@ def main(*, hardware_nodes=False, top_k=1, evidence_ranks=False, questions=QUEST
         normalize_embeddings=True,
     )
 
+    # Berechne auch die Fragevektoren wie bisher gemeinsam im Batch.
     question_vectors = model.encode(
         [f"query: {question}" for question in questions],
         normalize_embeddings=True,
     )
+    vectors_by_question = dict(zip(questions, question_vectors, strict=True))
 
-    for question, question_vector in zip(
-        questions, question_vectors, strict=True
-    ):
+    def score_e5(question):
+        # Liefert einen Score pro Abschnitt in der Reihenfolge von chunks.
+        # Die Sortierung übernimmt retrieve_e5().
+        return passage_vectors @ vectors_by_question[question]
+
+    # Für den Belegrang brauchen wir auch Treffer außerhalb der sichtbaren Top K.
+    embedding_limit = len(chunks) if evidence_ranks else top_k
+
+    for question in questions:
         print(f"\n--- {question} ---")
 
-        keyword_hits = rank_keyword_chunks(chunks, question)
-
-        # Vergleiche den Fragevektor mit sämtlichen Dokumentvektoren.
-        scores = passage_vectors @ question_vector
-        ranked_indices = sorted(
-            range(len(scores)),
-            key=lambda index: scores[index],
-            reverse=True,
-        )
-        embedding_hits = [
-            (index, round(float(scores[index]), 3))
-            for index in ranked_indices
+        # Bringe die Worttreffer für die gemeinsame Ausgabe ins E5-Format.
+        keyword_hits = [
+            {**chunks[index], "score": score}
+            for index, score in rank_keyword_chunks(chunks, question)
         ]
 
-        # Verwende für beide Verfahren dieselbe Darstellung.
+        embedding_hits = retrieve_e5(
+            question,
+            chunks,
+            score_e5,
+            top_k=embedding_limit,
+        )
+
         for title, hits in (
             ("WORTSUCHE – Anzahl Suchworttreffer", keyword_hits),
             ("EMBEDDINGS – Kosinusähnlichkeit", embedding_hits),
@@ -174,20 +181,21 @@ def main(*, hardware_nodes=False, top_k=1, evidence_ranks=False, questions=QUEST
             print(f"\n{title}")
 
             if evidence_ranks:
-                show_evidence_rank(question, chunks, hits)
+                show_evidence_rank(question, hits)
 
             if not hits:
                 print("Kein Treffer.")
                 continue
 
-            for rank, (index, score) in enumerate(hits[:top_k], start=1):
-                chunk = chunks[index]
+            for rank, hit in enumerate(hits[:top_k], start=1):
+                # Erst für die Ausgabe runden, damit die Rangfolge erhalten bleibt.
+                score = round(hit["score"], 3)
                 print(
-                    f"Platz {rank}: {chunk['path']}:"
-                    f"{chunk['start_line']}-{chunk['end_line']}"
+                    f"Platz {rank}: {hit['path']}:"
+                    f"{hit['start_line']}-{hit['end_line']}"
                     f" | Wert: {score}"
                 )
-                print(chunk["text"])
+                print(hit["text"])
 
 
 if __name__ == "__main__":
@@ -207,7 +215,8 @@ if __name__ == "__main__":
         action="store_true",
         help="Verwendet den neuen Fragensatz für den Vergleich.",
     )
-    parser.add_argument("--top-k", type=int, choices=(1, 3), default=1)
+    parser.add_argument("--top-k", type=int, choices=(1, 3, 10), default=1)
+
     args = parser.parse_args()
     main(
         hardware_nodes=args.hardware_nodes,
