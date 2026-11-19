@@ -1,20 +1,22 @@
 services:
-  api:
+  temperature:
     build: .
-    restart: unless-stopped
 
-    # Übergibt die vorhandenen API-Schlüssel erst beim Containerstart.
-    env_file: .env
-    user: "${COSI_UID:?COSI_UID fehlt}:${COSI_GID:?COSI_GID fehlt}"
+    # Schlüssel werden nur für Modellberichte gebraucht.
+    env_file:
+      - path: .env
+        required: false
+    user: "${COSI_UID:-10001}:${COSI_GID:-10001}"
 
-    # Verwendet auf Cosi-Lab denselben lokalen Port wie bisher.
-    ports:
-      - "127.0.0.1:8000:8000"
-
-    # Die API liest und schreibt dieselbe SQLite-Datei wie zuvor.
+    # Damit Berichte und Datenbank auch nach dem Containerlauf erhalten bleiben.
     volumes:
       - type: bind
         source: ./data
         target: /app/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./reports
+        target: /app/reports
         bind:
           create_host_path: false
