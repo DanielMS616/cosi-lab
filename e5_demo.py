@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 from sentence_transformers import SentenceTransformer
@@ -56,8 +57,20 @@ def suche_e5(modell, frage, abschnitte):
 
 
 def main():
+    # argparse liest die Frage aus dem Terminal und speichert sie in args.frage.
+    parser = argparse.ArgumentParser(
+        description="Durchsucht Beispielabsätze mit E5."
+    )
+    parser.add_argument("frage", help="Suchfrage in Anführungszeichen")
+    args = parser.parse_args()
+
+    # Entferne Leerzeichen am Anfang und Ende. Brich bei einer leeren Frage
+    # ab, bevor das E5-Modell geladen wird.
+    frage = args.frage.strip()
+    if not frage:
+        parser.error("Die Frage darf nicht leer sein.")
+
     ordner = Path(__file__).parent / "examples" / "rag"
-    frage = "Was passiert, wenn bei der Halterung H-12 der Messschieber gewechselt wird?"
 
     # Jede Datei liefert ihre Absätze für dieselbe Suchliste.
     abschnitte = []
