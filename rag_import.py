@@ -1,19 +1,16 @@
 """Baut den PostgreSQL-Bestand für die E5-Dokusuche neu auf."""
 
-import os
 from pathlib import Path
 
-import psycopg
-from dotenv import load_dotenv
 from pgvector import Vector
 from pgvector.psycopg import register_vector
 from sentence_transformers import SentenceTransformer
 
-from e5_demo import lese_absaetze
+from rag_cli import E5_MODELL, lese_absaetze
+from rag_db import verbinde_rag_db
 
 
 PROJEKTORDNER = Path(__file__).resolve().parent
-E5_MODELL = "intfloat/multilingual-e5-small"
 
 
 def lade_abschnitte():
@@ -29,7 +26,7 @@ def lade_abschnitte():
     return abschnitte
 
 
-def speichere_abschnitte(abschnitte, vektoren, passwort):
+def speichere_abschnitte(abschnitte, vektoren):
     # Ein Datensatz verbindet Absatz, Fundstelle und zugehörigen E5-Vektor.
     zeilen = []
     for abschnitt, vektor in zip(abschnitte, vektoren, strict=True):
@@ -38,10 +35,7 @@ def speichere_abschnitte(abschnitte, vektoren, passwort):
             abschnitt["text"], Vector(vektor),
         ))
 
-    with psycopg.connect(
-        host="127.0.0.1", port=5433, dbname="cosi_rag",
-        user="cosi_rag", password=passwort, connect_timeout=5,
-    ) as db:
+    with verbinde_rag_db() as db:
         db.execute("CREATE EXTENSION IF NOT EXISTS vector")
         register_vector(db)
         db.execute("""
@@ -66,11 +60,6 @@ def speichere_abschnitte(abschnitte, vektoren, passwort):
 
 
 def main():
-    load_dotenv(PROJEKTORDNER / ".env")
-    passwort = os.getenv("RAG_POSTGRES_PASSWORD")
-    if not passwort:
-        raise SystemExit("RAG_POSTGRES_PASSWORD fehlt in der lokalen .env.")
-
     abschnitte = lade_abschnitte()
     if not abschnitte:
         raise SystemExit("Keine Absätze in examples/rag/ gefunden.")
@@ -80,7 +69,7 @@ def main():
     passagen = [f"passage: {abschnitt['text']}" for abschnitt in abschnitte]
     vektoren = modell.encode(passagen, normalize_embeddings=True)
 
-    speichere_abschnitte(abschnitte, vektoren, passwort)
+    speichere_abschnitte(abschnitte, vektoren)
     print(f"{len(abschnitte)} Absätze in PostgreSQL gespeichert.")
 
 
