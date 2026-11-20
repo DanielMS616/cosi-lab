@@ -1,0 +1,21 @@
+name: cosi-e5-rag
+
+services:
+  rag-db:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_DB: cosi_rag
+      POSTGRES_USER: cosi_rag
+      POSTGRES_PASSWORD: ${RAG_POSTGRES_PASSWORD:?RAG_POSTGRES_PASSWORD in .env setzen}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - rag-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "cosi_rag", "-d", "cosi_rag"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  rag-db-data:
