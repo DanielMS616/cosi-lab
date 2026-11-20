@@ -68,6 +68,13 @@ def main():
         action="store_true",
         help="Zeigt den Originaltext des besten Treffers.",
     )
+    # Lies die gewünschte Anzahl als ganze Zahl ein.
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        metavar="ANZAHL",
+        help="Zeigt höchstens ANZAHL Treffer. Ohne Schalter erscheinen alle.",
+    )
     args = parser.parse_args()
 
     # Entferne Leerzeichen am Anfang und Ende. Brich bei einer leeren Frage
@@ -75,6 +82,10 @@ def main():
     frage = args.frage.strip()
     if not frage:
         parser.error("Die Frage darf nicht leer sein.")
+
+    # Ohne --top-k ist args.top_k None. Eine angegebene Zahl muss positiv sein.
+    if args.top_k is not None and args.top_k < 1:
+        parser.error("--top-k muss mindestens 1 sein.")
 
     ordner = Path(__file__).parent / "examples" / "rag"
 
@@ -92,7 +103,10 @@ def main():
 
     print(f"Frage: {frage}")
     print(f"Geprüfte Absätze: {len(abschnitte)}")
-    for rang, eintrag in enumerate(treffer, start=1):
+
+    # Nimm nur die ersten k Treffer für die Anzeige. Bei None nimm alle.
+    sichtbare_treffer = treffer[:args.top_k]
+    for rang, eintrag in enumerate(sichtbare_treffer, start=1):
         fundstelle = f"{eintrag['datei']}:{eintrag['startzeile']}-{eintrag['endzeile']}"
         print(f"{rang}. {fundstelle}  {eintrag['wert']:.3f}")
 
