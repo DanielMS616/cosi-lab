@@ -1,11 +1,15 @@
 """Terminalprogramm für die Dokusuche und optionale Modellantworten."""
 
 import argparse
+from datetime import datetime, timezone
+from pathlib import Path
+from time import perf_counter
 
 from sentence_transformers import SentenceTransformer
 
 
 E5_MODELL = "intfloat/multilingual-e5-small"
+RUN_DATABASE = Path(__file__).resolve().parent / "data" / "model_runs.sqlite3"
 
 
 def lese_absaetze(datei):
@@ -113,9 +117,15 @@ def main():
     # Nur die Frage wird kodiert; die Absatzvektoren sind schon gespeichert.
     from rag_db import suche_abschnitte
 
+    e5_start = perf_counter()
     modell = SentenceTransformer(E5_MODELL, device="cpu")
+    e5_load_ms = round((perf_counter() - e5_start) * 1_000)
+
+    # Die Suchdauer umfasst den Fragevektor und die Abfrage in PostgreSQL.
+    suchstart = perf_counter()
     fragevektor = modell.encode(f"query: {frage}", normalize_embeddings=True)
     sichtbare_treffer = suche_abschnitte(fragevektor, args.top_k)
+    retrieval_ms = round((perf_counter() - suchstart) * 1_000)
     if not sichtbare_treffer:
         print("Keine Absätze in PostgreSQL gefunden. Führe zuerst rag_import.py aus.")
         return
@@ -142,20 +152,28 @@ def main():
             print(prompt)
 
         if mit_antwort:
+            from rag_run_storage import save_rag_run
+
             # Importiere nur den Adapter für das gewählte Modell.
             if args.gpt:
-                from model_gpt import generate_gpt_report
+                from model_gpt import GPT_MODEL, generate_gpt_report
 
                 antwort_funktion = generate_gpt_report
                 anbieter = "GPT"
+                antwortmodell = GPT_MODEL
             else:
-                from model_gemini import generate_gemini_report
+                from model_gemini import GEMINI_MODEL, generate_gemini_report
 
                 antwort_funktion = generate_gemini_report
                 anbieter = "Gemini"
+                antwortmodell = GEMINI_MODEL
 
             # Prompt und Ausgabelimit sind für beide Anbieter gleich.
-            ergebnis = antwort_funktion(prompt, max_output_tokens=240)
+            token_limit = 240
+            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+            api_start = perf_counter()
+            ergebnis = antwort_funktion(prompt, max_output_tokens=token_limit)
+            client_duration_ms = round((perf_counter() - api_start) * 1_000)
             print(f"\n{anbieter}-Antwort:")
             print(ergebnis["text"])
 
@@ -164,6 +182,30 @@ def main():
                 print(f"\nAPI-Status: {ergebnis['status']}")
                 if ergebnis["incomplete_reason"]:
                     print(f"Grund: {ergebnis['incomplete_reason']}")
+
+            # Speichere dieselbe Frage, denselben Prompt und dieselben Quellen,
+            # die verwendet wurden. Nicht gemeldete Werte bleiben in SQLite NULL.
+            lauf = {
+                "requested_at_utc": requested_at_utc,
+                "question": frage,
+                "top_k": args.top_k,
+                "retrieval_model": E5_MODELL,
+                "provider": anbieter.lower(),
+                "model": antwortmodell,
+                "max_output_tokens": token_limit,
+                "prompt": prompt,
+                "response_text": ergebnis["text"],
+                "input_tokens": ergebnis.get("input_tokens"),
+                "output_tokens": ergebnis.get("output_tokens"),
+                "e5_load_ms": e5_load_ms,
+                "retrieval_ms": retrieval_ms,
+                "client_duration_ms": client_duration_ms,
+                "provider_duration_ms": ergebnis.get("processing_ms"),
+                "api_status": ergebnis.get("status"),
+                "incomplete_reason": ergebnis.get("incomplete_reason"),
+            }
+            lauf_id = save_rag_run(RUN_DATABASE, lauf, sichtbare_treffer)
+            print(f"RAG-Lauf gespeichert: ID {lauf_id}")
 
 
 if __name__ == "__main__":

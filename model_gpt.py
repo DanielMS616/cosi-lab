@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 
+GPT_MODEL = "gpt-4o-mini"
+
+
 def generate_gpt_report(prompt, *, max_output_tokens=120):
     """Sendet den Temperaturprompt an GPT und gibt die Antwort als Text zurück."""
 
@@ -17,7 +20,7 @@ def generate_gpt_report(prompt, *, max_output_tokens=120):
 
     # Der Prompt enthält bereits den Schreibauftrag und die berechneten Zahlen.
     raw_response = client.responses.with_raw_response.create(
-        model="gpt-4o-mini",
+        model=GPT_MODEL,
         input=prompt,
         max_output_tokens=max_output_tokens,
     )
