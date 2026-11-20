@@ -1,9 +1,12 @@
-"""Speichert RAG-Modellläufe in der lokalen SQLite-Datei."""
+"""Speichert und liest RAG-Modellläufe in der lokalen SQLite-Datei."""
 
 import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+
+
+RUN_DATABASE = Path(__file__).resolve().parent / "data" / "model_runs.sqlite3"
 
 
 def save_rag_run(database_path, run, sources):
@@ -57,3 +60,28 @@ def save_rag_run(database_path, run, sources):
         lauf_id = cursor.lastrowid
 
     return lauf_id
+
+
+def load_rag_run(database_path, run_id):
+    """Liest einen gespeicherten Lauf schreibgeschützt oder gibt None zurück."""
+    # mode=ro verhindert Änderungen und legt keine fehlende Datei an.
+    database_uri = Path(database_path).resolve().as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(database_uri, uri=True)) as db:
+        db.row_factory = sqlite3.Row
+
+        # Die gemeinsame Datei kann zunächst nur Temperaturläufe enthalten.
+        hat_rag_tabelle = db.execute("""
+            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rag_runs'
+        """).fetchone()
+        if hat_rag_tabelle is None:
+            return None
+
+        row = db.execute("SELECT * FROM rag_runs WHERE id = ?", (run_id,)).fetchone()
+
+    if row is None:
+        return None
+
+    lauf = dict(row)
+    # SQLite speichert die Quellen als JSON-Text; die Ansicht braucht die Liste.
+    lauf["sources"] = json.loads(lauf.pop("sources_json"))
+    return lauf

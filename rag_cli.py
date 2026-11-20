@@ -2,14 +2,12 @@
 
 import argparse
 from datetime import datetime, timezone
-from pathlib import Path
 from time import perf_counter
 
 from sentence_transformers import SentenceTransformer
 
 
 E5_MODELL = "intfloat/multilingual-e5-small"
-RUN_DATABASE = Path(__file__).resolve().parent / "data" / "model_runs.sqlite3"
 
 
 def lese_absaetze(datei):
@@ -152,7 +150,7 @@ def main():
             print(prompt)
 
         if mit_antwort:
-            from rag_run_storage import save_rag_run
+            from rag_run_storage import RUN_DATABASE, save_rag_run
 
             # Importiere nur den Adapter für das gewählte Modell.
             if args.gpt:
