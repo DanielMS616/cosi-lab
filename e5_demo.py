@@ -89,14 +89,18 @@ def main():
 
     ordner = Path(__file__).parent / "examples" / "rag"
 
-    # Jede Datei liefert ihre Absätze für dieselbe Suchliste.
     abschnitte = []
-    for dateiname in (
-            "nachtflug-rack.md",
-            "fraese-f07.md",
-            "masspruefung-h12.md",
-    ):
-        abschnitte.extend(lese_absaetze(ordner / dateiname))
+
+    # glob("*.md") findet Einträge mit der Endung .md direkt im Ordner.
+    # sorted sorgt dafür, dass wir sie immer in derselben Reihenfolge lesen.
+    for datei in sorted(ordner.glob("*.md")):
+        if datei.is_file():
+            abschnitte.extend(lese_absaetze(datei))
+
+    # Ohne Absätze gibt es nichts zu suchen. E5 muss nicht geladen werden.
+    if not abschnitte:
+        print(f"Keine durchsuchbaren Markdown-Absätze in {ordner} gefunden.")
+        return
 
     modell = SentenceTransformer("intfloat/multilingual-e5-small", device="cpu")
     treffer = suche_e5(modell, frage, abschnitte)
