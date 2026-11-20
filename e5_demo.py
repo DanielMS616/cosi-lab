@@ -102,6 +102,11 @@ def main():
         action="store_true",
         help="Zeigt den Prompt mit den ausgewählten Fundstellen.",
     )
+    parser.add_argument(
+        "--gpt",
+        action="store_true",
+        help="Sendet den Prompt an GPT und zeigt die Antwort.",
+    )
     args = parser.parse_args()
 
     # Entferne Leerzeichen am Anfang und Ende. Brich bei einer leeren Frage
@@ -147,10 +152,26 @@ def main():
         print("\nOriginaltext zu Platz 1:")
         print(bester_treffer["text"])
 
-    # Verwende für den Prompt dieselben Treffer wie für die Rangliste.
-    if args.show_prompt:
-        print("\nPromptvorschau:")
-        print(baue_prompt(frage, sichtbare_treffer))
+    # Baue den Prompt einmal, damit Vorschau und GPT denselben Text bekommen.
+    if args.show_prompt or args.gpt:
+        prompt = baue_prompt(frage, sichtbare_treffer)
+
+        if args.show_prompt:
+            print("\nPromptvorschau:")
+            print(prompt)
+
+        if args.gpt:
+            # Für die reine Suche oder Vorschau brauchen wir den Adapter nicht.
+            from model_gpt import generate_gpt_report
+
+            ergebnis = generate_gpt_report(prompt, max_output_tokens=240)
+            print("\nGPT-Antwort:")
+            print(ergebnis["text"])
+
+            # Der Status zeigt, ob die API die Antwort abgeschlossen hat.
+            print(f"\nAPI-Status: {ergebnis['status']}")
+            if ergebnis["incomplete_reason"]:
+                print(f"Grund: {ergebnis['incomplete_reason']}")
 
 
 if __name__ == "__main__":
