@@ -62,6 +62,12 @@ def main():
         description="Durchsucht Beispielabsätze mit E5."
     )
     parser.add_argument("frage", help="Suchfrage in Anführungszeichen")
+    # Ohne --show-text ist args.show_text False, mit dem Schalter True.
+    parser.add_argument(
+        "--show-text",
+        action="store_true",
+        help="Zeigt den Originaltext des besten Treffers.",
+    )
     args = parser.parse_args()
 
     # Entferne Leerzeichen am Anfang und Ende. Brich bei einer leeren Frage
@@ -89,6 +95,12 @@ def main():
     for rang, eintrag in enumerate(treffer, start=1):
         fundstelle = f"{eintrag['datei']}:{eintrag['startzeile']}-{eintrag['endzeile']}"
         print(f"{rang}. {fundstelle}  {eintrag['wert']:.3f}")
+
+    # Prüfe, ob der Schalter gesetzt ist und mindestens ein Treffer vorliegt.
+    if args.show_text and treffer:
+        bester_treffer = treffer[0]  # Die Liste ist bereits nach Rang sortiert.
+        print("\nOriginaltext zu Platz 1:")
+        print(bester_treffer["text"])
 
 
 if __name__ == "__main__":
