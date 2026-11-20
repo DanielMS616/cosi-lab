@@ -3,30 +3,55 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 
 
-def lese_ersten_absatz(datei):
-    """Liest bei unseren Beispieldateien den ersten Absatz nach dem Titel."""
-    inhalt = datei.read_text(encoding="utf-8")
+def lese_absaetze(datei):
+    """Liest die Absätze unserer Beispieldatei mit ihren Zeilennummern."""
+    zeilen = datei.read_text(encoding="utf-8").splitlines()
 
-    # Die Leerzeile trennt den Titel vom ersten Absatz.
-    # Daher ist der Titel an Position 0 und der Absatz an Position 1.
-    return inhalt.split("\n\n", maxsplit=2)[1]
+    # Eine zusätzliche Leerzeile schließt auch den letzten Absatz ab.
+    zeilen.append("")
+
+    absaetze = []
+    absatzzeilen = []
+    startzeile = None
+
+    for nummer, zeile in enumerate(zeilen, start=1):
+        # Titelzeilen mit "# " und Leerzeilen gehören nicht zum Absatztext.
+        if zeile.strip() and not zeile.startswith("# "):
+            if not absatzzeilen:
+                startzeile = nummer
+            absatzzeilen.append(zeile)
+        elif absatzzeilen:
+            # Der Absatz endet eine Zeile vor dem Trenner.
+            absaetze.append({
+                "datei": datei.name,
+                "startzeile": startzeile,
+                "endzeile": nummer - 1,
+                "text": "\n".join(absatzzeilen),
+            })
+            absatzzeilen = []
+
+    return absaetze
+
+""" Der Ablauf: Bei der ersten Textzeile merken wir uns den Anfang. 
+Weitere Textzeilen kommen dazu. Sobald eine Leerzeile folgt, speichern wir den fertigen Absatz."""
 
 
 def suche_e5(modell, frage, abschnitte):
-    """Gibt die Dateinamen und Ähnlichkeitswerte in bester Reihenfolge zurück."""
-    # E5 unterscheidet Fragen (query) und Textabschnitte (passage).
+    """Gibt die Absätze mit ihren Ähnlichkeitswerten sortiert zurück."""
     fragevektor = modell.encode(f"query: {frage}", normalize_embeddings=True)
     treffer = []
 
-    for dateiname, text in abschnitte:
-        textvektor = modell.encode(f"passage: {text}", normalize_embeddings=True)
+    for abschnitt in abschnitte:
+        textvektor = modell.encode(
+            f"passage: {abschnitt['text']}", normalize_embeddings=True
+        )
 
-        # Bei Vektoren der Länge 1 ergibt das Skalarprodukt (@) die
-        # Kosinusähnlichkeit. Je höher der Wert, desto ähnlicher die Richtung.
+        # Das Skalarprodukt der normierten Vektoren ist die Kosinusähnlichkeit.
         aehnlichkeit = float(fragevektor @ textvektor)
-        treffer.append({"datei": dateiname, "wert": aehnlichkeit})
 
-    # Der größte Wert soll auf Platz 1 stehen.
+        # **abschnitt übernimmt Datei, Zeilen und Text in den neuen Treffer.
+        treffer.append({**abschnitt, "wert": aehnlichkeit})
+
     return sorted(treffer, key=lambda eintrag: eintrag["wert"], reverse=True)
 
 
@@ -34,19 +59,18 @@ def main():
     ordner = Path(__file__).parent / "examples" / "rag"
     frage = "Zählt genau 60 °C bei der Fräse schon als Überschreitung?"
 
-    # Das Rack steht bewusst zuerst in der Liste: E5 soll selbst sortieren.
     abschnitte = []
     for dateiname in ("nachtflug-rack.md", "fraese-f07.md"):
-        text = lese_ersten_absatz(ordner / dateiname)
-        abschnitte.append((dateiname, text))
+        abschnitte.extend(lese_absaetze(ordner / dateiname))
 
     modell = SentenceTransformer("intfloat/multilingual-e5-small", device="cpu")
     treffer = suche_e5(modell, frage, abschnitte)
 
-    # Nur main() formatiert das Ergebnis für das Terminal.
     print(f"Frage: {frage}")
+    print(f"Geprüfte Absätze: {len(abschnitte)}")
     for rang, eintrag in enumerate(treffer, start=1):
-        print(f"{rang}. {eintrag['datei']}: {eintrag['wert']:.3f}")
+        fundstelle = f"{eintrag['datei']}:{eintrag['startzeile']}-{eintrag['endzeile']}"
+        print(f"{rang}. {fundstelle}  {eintrag['wert']:.3f}")
 
 
 if __name__ == "__main__":
