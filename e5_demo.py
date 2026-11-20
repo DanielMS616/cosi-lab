@@ -57,10 +57,15 @@ def suche_e5(modell, frage, abschnitte):
 
 def main():
     ordner = Path(__file__).parent / "examples" / "rag"
-    frage = "Zählt genau 60 °C bei der Fräse schon als Überschreitung?"
+    frage = "Was passiert, wenn bei der Halterung H-12 der Messschieber gewechselt wird?"
 
+    # Jede Datei liefert ihre Absätze für dieselbe Suchliste.
     abschnitte = []
-    for dateiname in ("nachtflug-rack.md", "fraese-f07.md"):
+    for dateiname in (
+            "nachtflug-rack.md",
+            "fraese-f07.md",
+            "masspruefung-h12.md",
+    ):
         abschnitte.extend(lese_absaetze(ordner / dateiname))
 
     modell = SentenceTransformer("intfloat/multilingual-e5-small", device="cpu")
