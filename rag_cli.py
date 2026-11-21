@@ -4,42 +4,10 @@ import argparse
 
 from time import perf_counter
 from datetime import datetime, timezone
-from sentence_transformers import SentenceTransformer
 
 from rag_prompt import baue_prompt
 from rag_zitate import pruefe_zitate
-
-
-E5_MODELL = "intfloat/multilingual-e5-small"
-
-
-def lese_absaetze(datei):
-    """Liest die Absätze unserer Beispieldatei mit ihren Zeilennummern."""
-    zeilen = datei.read_text(encoding="utf-8").splitlines()
-    # Eine zusätzliche Leerzeile schließt auch den letzten Absatz ab.
-    zeilen.append("")
-
-    absaetze = []
-    absatzzeilen = []
-    startzeile = None
-
-    for nummer, zeile in enumerate(zeilen, start=1):
-        # Überschriften und Leerzeilen gehören nicht zum Absatztext.
-        if zeile.strip() and not zeile.startswith("# "):
-            if not absatzzeilen:
-                startzeile = nummer
-            absatzzeilen.append(zeile)
-        elif absatzzeilen:
-            # Die Trennzeile selbst zählt nicht zum Absatz.
-            absaetze.append({
-                "datei": datei.name,
-                "startzeile": startzeile,
-                "endzeile": nummer - 1,
-                "text": "\n".join(absatzzeilen),
-            })
-            absatzzeilen = []
-
-    return absaetze
+from rag_embeddings import E5_MODELL, lade_e5_modell
 
 
 def main():
@@ -88,7 +56,7 @@ def main():
     from rag_db import suche_abschnitte
 
     e5_start = perf_counter()
-    modell = SentenceTransformer(E5_MODELL, device="cpu")
+    modell = lade_e5_modell()
     e5_load_ms = round((perf_counter() - e5_start) * 1_000)
 
     # Die Suchdauer umfasst den Fragevektor und die Abfrage in PostgreSQL.

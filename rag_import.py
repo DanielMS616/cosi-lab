@@ -4,13 +4,41 @@ from pathlib import Path
 
 from pgvector import Vector
 from pgvector.psycopg import register_vector
-from sentence_transformers import SentenceTransformer
 
-from rag_cli import E5_MODELL, lese_absaetze
 from rag_db import verbinde_rag_db
+from rag_embeddings import lade_e5_modell
 
 
 PROJEKTORDNER = Path(__file__).resolve().parent
+
+
+def lese_absaetze(datei):
+    """Liest die Absätze unserer Beispieldatei mit ihren Zeilennummern."""
+    zeilen = datei.read_text(encoding="utf-8").splitlines()
+    # Eine zusätzliche Leerzeile schließt auch den letzten Absatz ab.
+    zeilen.append("")
+
+    absaetze = []
+    absatzzeilen = []
+    startzeile = None
+
+    for nummer, zeile in enumerate(zeilen, start=1):
+        # Überschriften und Leerzeilen gehören nicht zum Absatztext.
+        if zeile.strip() and not zeile.startswith("# "):
+            if not absatzzeilen:
+                startzeile = nummer
+            absatzzeilen.append(zeile)
+        elif absatzzeilen:
+            # Die Trennzeile selbst zählt nicht zum Absatz.
+            absaetze.append({
+                "datei": datei.name,
+                "startzeile": startzeile,
+                "endzeile": nummer - 1,
+                "text": "\n".join(absatzzeilen),
+            })
+            absatzzeilen = []
+
+    return absaetze
 
 
 def lade_abschnitte():
@@ -65,7 +93,7 @@ def main():
         raise SystemExit("Keine Absätze in examples/rag/ gefunden.")
 
     # Beim Import kodieren wir nur Dokumentabsätze, keine Fragen.
-    modell = SentenceTransformer(E5_MODELL, device="cpu")
+    modell = lade_e5_modell()
     passagen = [f"passage: {abschnitt['text']}" for abschnitt in abschnitte]
     vektoren = modell.encode(passagen, normalize_embeddings=True)
 
