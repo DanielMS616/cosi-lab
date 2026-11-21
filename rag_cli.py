@@ -2,13 +2,12 @@
 
 import argparse
 
-from time import perf_counter
-from datetime import datetime, timezone
-
 from rag_prompt import baue_prompt
 from rag_zitate import pruefe_zitate
 from rag_embeddings import E5_MODELL
 from rag_suche import suche_fuer_frage
+from rag_antwort import rufe_antwortmodell_auf
+
 
 def main():
     parser = argparse.ArgumentParser(description="Durchsucht Beispielabsätze mit E5.")
@@ -84,26 +83,12 @@ def main():
         if mit_antwort:
             from rag_run_storage import RUN_DATABASE, save_rag_run
 
-            # Importiere nur den Adapter für das gewählte Modell.
-            if args.gpt:
-                from model_gpt import GPT_MODEL, generate_gpt_report
-
-                antwort_funktion = generate_gpt_report
-                anbieter = "GPT"
-                antwortmodell = GPT_MODEL
-            else:
-                from model_gemini import GEMINI_MODEL, generate_gemini_report
-
-                antwort_funktion = generate_gemini_report
-                anbieter = "Gemini"
-                antwortmodell = GEMINI_MODEL
-
-            # Prompt und Ausgabelimit sind für beide Anbieter gleich.
+            # Die CLI wählt den Anbieter und übergibt den fertigen Prompt.
+            anbieter = "GPT" if args.gpt else "Gemini"
             token_limit = 240
-            requested_at_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-            api_start = perf_counter()
-            ergebnis = antwort_funktion(prompt, max_output_tokens=token_limit)
-            client_duration_ms = round((perf_counter() - api_start) * 1_000)
+            ergebnis = rufe_antwortmodell_auf(
+                prompt, anbieter.lower(), max_output_tokens=token_limit
+            )
             print(f"\n{anbieter}-Antwort:")
             print(ergebnis["text"])
 
@@ -128,12 +113,12 @@ def main():
             # Speichere dieselbe Frage, denselben Prompt und dieselben Quellen,
             # die verwendet wurden. Nicht gemeldete Werte bleiben in SQLite NULL.
             lauf = {
-                "requested_at_utc": requested_at_utc,
+                "requested_at_utc": ergebnis["requested_at_utc"],
                 "question": frage,
                 "top_k": args.top_k,
                 "retrieval_model": E5_MODELL,
                 "provider": anbieter.lower(),
-                "model": antwortmodell,
+                "model": ergebnis["model"],
                 "max_output_tokens": token_limit,
                 "prompt": prompt,
                 "response_text": ergebnis["text"],
@@ -141,7 +126,7 @@ def main():
                 "output_tokens": ergebnis.get("output_tokens"),
                 "e5_load_ms": e5_load_ms,
                 "retrieval_ms": retrieval_ms,
-                "client_duration_ms": client_duration_ms,
+                "client_duration_ms": ergebnis["client_duration_ms"],
                 "provider_duration_ms": ergebnis.get("processing_ms"),
                 "api_status": ergebnis.get("status"),
                 "incomplete_reason": ergebnis.get("incomplete_reason"),
