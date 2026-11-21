@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 from rag_prompt import baue_prompt
 from rag_zitate import pruefe_zitate
-from rag_embeddings import E5_MODELL, lade_e5_modell
-
+from rag_embeddings import E5_MODELL
+from rag_suche import suche_fuer_frage
 
 def main():
     parser = argparse.ArgumentParser(description="Durchsucht Beispielabsätze mit E5.")
@@ -52,18 +52,10 @@ def main():
     if args.top_k is not None and args.top_k < 1:
         parser.error("--top-k muss mindestens 1 sein.")
 
-    # Nur die Frage wird kodiert; die Absatzvektoren sind schon gespeichert.
-    from rag_db import suche_abschnitte
-
-    e5_start = perf_counter()
-    modell = lade_e5_modell()
-    e5_load_ms = round((perf_counter() - e5_start) * 1_000)
-
-    # Die Suchdauer umfasst den Fragevektor und die Abfrage in PostgreSQL.
-    suchstart = perf_counter()
-    fragevektor = modell.encode(f"query: {frage}", normalize_embeddings=True)
-    sichtbare_treffer = suche_abschnitte(fragevektor, args.top_k)
-    retrieval_ms = round((perf_counter() - suchstart) * 1_000)
+    # Die Suche liefert Daten. Die CLI entscheidet, was sie davon ausgibt.
+    sichtbare_treffer, e5_load_ms, retrieval_ms = suche_fuer_frage(
+        frage, args.top_k
+    )
     if not sichtbare_treffer:
         print("Keine Absätze in PostgreSQL gefunden. Führe zuerst rag_import.py aus.")
         return
