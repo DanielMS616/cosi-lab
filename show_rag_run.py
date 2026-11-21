@@ -4,6 +4,7 @@ import argparse
 import sqlite3
 from json import JSONDecodeError
 
+from rag_zitate import pruefe_zitate
 from rag_run_storage import RUN_DATABASE, load_rag_run
 
 
@@ -36,6 +37,18 @@ def zeige_lauf(lauf):
 
     print("\nAntwort:")
     print(lauf["response_text"])
+
+    # SQLite liefert die gespeicherte Antwort und die Fundstellen von damals.
+    # Damit prüfen wir genau den Stand, den das Modell bei diesem Lauf sah.
+    zitatpruefung = pruefe_zitate(lauf["response_text"], lauf["sources"])
+    unbekannte_zitate = zitatpruefung["unbekannt"]
+
+    # Die Warnung wird nur für die Anzeige berechnet.
+    # Der gespeicherte Lauf selbst bleibt unverändert.
+    if unbekannte_zitate:
+        print("\nZitatwarnung: Diese Fundstellen standen nicht im Prompt:")
+        for zitat in unbekannte_zitate:
+            print(f"- {zitat}")
 
     print("\nGespeicherte Fundstellen:")
     for rang, quelle in enumerate(lauf["sources"], start=1):
