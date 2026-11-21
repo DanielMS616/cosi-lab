@@ -1,10 +1,12 @@
 """Terminalprogramm für die Dokusuche und optionale Modellantworten."""
 
 import argparse
-from datetime import datetime, timezone
-from time import perf_counter
 
+from time import perf_counter
+from datetime import datetime, timezone
 from sentence_transformers import SentenceTransformer
+
+from rag_zitate import pruefe_zitate
 
 
 E5_MODELL = "intfloat/multilingual-e5-small"
@@ -174,6 +176,18 @@ def main():
             client_duration_ms = round((perf_counter() - api_start) * 1_000)
             print(f"\n{anbieter}-Antwort:")
             print(ergebnis["text"])
+
+            # Vergleiche die Zitate in der Antwort mit genau den Absätzen,
+            # die das Modell im Prompt gesehen hat.
+            zitatpruefung = pruefe_zitate(ergebnis["text"], sichtbare_treffer)
+            unbekannte_zitate = zitatpruefung["unbekannt"]
+
+            # Python betritt diesen Block nur, wenn die Liste Einträge enthält.
+            # Bei einer Antwort ohne Zitat bleibt die Liste ebenfalls leer.
+            if unbekannte_zitate:
+                print("\nZitatwarnung: Diese Fundstellen standen nicht im Prompt:")
+                for zitat in unbekannte_zitate:
+                    print(f"- {zitat}")
 
             # Nur der vorhandene GPT-Adapter liefert diese Statusfelder.
             if args.gpt:
