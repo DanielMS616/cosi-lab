@@ -52,12 +52,20 @@ def baue_prompt(frage, treffer):
         "Verwende hier weder 'Nicht belegt:' noch 'Hinweis:'.",
         "Auch ein belegtes Nein ist eine Antwort. Verwende in diesem Fall "
         "weder 'Nicht belegt:' noch 'Hinweis:'.",
-        "Nur wenn die gesuchte Angabe nicht aus den Ausschnitten hervorgeht: "
-        "Schreibe 'Nicht belegt: <fehlende Angabe>'. "
-        "Benenne, was fehlt, statt die Frage zu wiederholen. Rate nicht.",
-        "Nur in diesem zweiten Fall: Falls ein Ausschnitt sagt, wo die Angabe steht, "
-        "ergänze eine eigene Zeile im Format "
-        "'Hinweis: <Verweis> (Fundstelle: <Dateiname:Zeilenbereich>)'.",
+
+        # Die erste Zeile benennt nur die Wissenslücke. Sie hat kein Zitat.
+        "Fehlt die gesuchte Angabe, schreibe zuerst genau eine Zeile im Format "
+        "'Nicht belegt: <fehlende Angabe>'. Benenne, was fehlt, statt die Frage "
+        "zu wiederholen. Setze kein Zitat in diese Zeile und rate nicht.",
+
+        # Eine zweite Zeile ist nur für einen konkreten Verweis aus einer Quelle da.
+        "Ergänze nur dann eine zweite Zeile, wenn ein Ausschnitt ausdrücklich "
+        "sagt, wo die fehlende Angabe steht. Nutze dafür das Format "
+        "'Hinweis: <Verweis> (Fundstelle: <Pfad:Start-Ende>)'. Übernimm Pfad und "
+        "Zeilenbereich exakt aus der Fundstelle dieses Ausschnitts.",
+
+        "Gibt es keinen solchen Verweis, beende die Antwort nach der "
+        "'Nicht belegt:'-Zeile. Füge keine Erklärung und keine Fundstelle an.",
         f"\nFrage: {frage}",
     ]
 
