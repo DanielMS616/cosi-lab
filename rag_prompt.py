@@ -17,11 +17,12 @@ def baue_prompt(frage, treffer):
         "Fehlt die gesuchte Angabe, schreibe zuerst genau eine Zeile im Format "
         "'Nicht belegt: <fehlende Angabe>'. Benenne, was fehlt, statt die Frage "
         "zu wiederholen. Setze kein Zitat in diese Zeile und rate nicht.",
-        # Eine zweite Zeile ist nur für einen konkreten Verweis aus einer Quelle da.
-        "Ergänze nur dann eine zweite Zeile, wenn ein Ausschnitt ausdrücklich "
-        "sagt, wo die fehlende Angabe steht. Nutze dafür das Format "
-        "'Hinweis: <Verweis> (Fundstelle: <Pfad:Start-Ende>)'. Übernimm Pfad und "
-        "Zeilenbereich exakt aus der Fundstelle dieses Ausschnitts.",
+        # Ein belegter Verweis gehört als eigene zweite Zeile in die Antwort.
+        "Wenn ein Ausschnitt ausdrücklich sagt, wo die fehlende Angabe zu finden "
+        "ist, muss direkt nach der 'Nicht belegt:'-Zeile eine zweite Zeile "
+        "folgen. Verwende dafür das Format 'Hinweis: <Verweis> "
+        "(Fundstelle: <Pfad:Start-Ende>)'. Übernimm Pfad und Zeilenbereich "
+        "exakt aus der Fundstelle dieses Ausschnitts.",
         "Gibt es keinen solchen Verweis, beende die Antwort nach der "
         "'Nicht belegt:'-Zeile. Füge keine Erklärung und keine Fundstelle an.",
         f"\nFrage: {frage}",
