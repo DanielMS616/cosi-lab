@@ -1,0 +1,4 @@
+# FastAPI beschreibt, welche URL welche Funktion aufruft.
+fastapi
+# Uvicorn startet den Server, der die HTTP-Anfragen entgegennimmt.
+uvicorn
