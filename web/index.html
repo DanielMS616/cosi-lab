@@ -17,7 +17,7 @@
     li small { display: block; }
     section + section { margin-top: 2.5rem; }
     label { display: block; font-weight: 600; }
-    textarea, input, button { font: inherit; padding: .4rem; }
+    textarea, input, select, button { font: inherit; padding: .4rem; }
     textarea { box-sizing: border-box; width: 100%; }
     input[type="number"] { width: 5rem; }
     .formular-zeile { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
@@ -33,10 +33,10 @@
 
   <main>
     <section aria-labelledby="vorschau-titel">
-      <h2 id="vorschau-titel">Dokufrage als Vorschau</h2>
-      <p>Die Vorschau zeigt Fundstellen und Prompt, ohne GPT oder Gemini aufzurufen.</p>
+      <h2 id="vorschau-titel">Dokufrage</h2>
+      <p>Die Vorschau zeigt Fundstellen und Prompt. „Antwort anfordern“ sendet Frage und Ausschnitte an den gewählten Anbieter und speichert den Lauf.</p>
 
-      <form id="vorschau-formular">
+      <form id="dokufrage-formular">
         <label for="frage">Frage</label>
         <textarea id="frage" rows="3" required></textarea>
         <div class="formular-zeile">
@@ -44,14 +44,34 @@
             <label for="top-k">Trefferzahl</label>
             <input id="top-k" type="number" min="1" max="20" value="3" required>
           </div>
+          <div>
+            <label for="anbieter">Anbieter für die Antwort</label>
+            <select id="anbieter">
+              <option value="gemini">Gemini</option>
+              <option value="gpt">GPT</option>
+            </select>
+          </div>
           <button id="vorschau-knopf" type="submit" disabled>Vorschau laden</button>
+          <button id="antwort-knopf" type="submit" disabled>Antwort anfordern</button>
         </div>
       </form>
 
       <p id="vorschau-status" role="status"></p>
       <div id="vorschau-ergebnis" hidden>
-        <h3>Fundstellen</h3>
         <p id="vorschau-frage"></p>
+
+        <div id="modell-ergebnis" hidden>
+          <h3>Modellantwort</h3>
+          <p id="modell-text" class="quellentext"></p>
+          <p id="modell-name"></p>
+          <div id="zitatwarnung" hidden>
+            <p><strong>Diese Zitate standen nicht im Prompt:</strong></p>
+            <ul id="unbekannte-zitate"></ul>
+          </div>
+          <a id="modell-lauf">Gespeicherten Lauf als JSON öffnen</a>
+        </div>
+
+        <h3>Fundstellen</h3>
         <ol id="vorschau-fundstellen"></ol>
         <details>
           <summary>Prompt anzeigen</summary>
@@ -67,19 +87,22 @@
       <ul id="laufhistorie"></ul>
     </section>
 
-    <noscript>Aktiviere JavaScript für die Vorschau und die Laufhistorie.</noscript>
+    <noscript>Aktiviere JavaScript für die Dokusuche und die Laufhistorie.</noscript>
   </main>
 
   <script>
-    const formular = document.querySelector("#vorschau-formular");
+    const formular = document.querySelector("#dokufrage-formular");
     const frageFeld = document.querySelector("#frage");
     const trefferFeld = document.querySelector("#top-k");
+    const anbieterFeld = document.querySelector("#anbieter");
     const vorschauKnopf = document.querySelector("#vorschau-knopf");
+    const antwortKnopf = document.querySelector("#antwort-knopf");
     const vorschauStatus = document.querySelector("#vorschau-status");
     const vorschauErgebnis = document.querySelector("#vorschau-ergebnis");
     const vorschauFrage = document.querySelector("#vorschau-frage");
     const vorschauFundstellen = document.querySelector("#vorschau-fundstellen");
     const vorschauPrompt = document.querySelector("#vorschau-prompt");
+    const modellErgebnis = document.querySelector("#modell-ergebnis");
 
     function zeigeVorschau(daten) {
       vorschauFrage.textContent = daten.frage;
@@ -102,12 +125,36 @@
       vorschauErgebnis.hidden = false;
     }
 
-    async function ladeVorschau(ereignis) {
+    function zeigeModellantwort(daten) {
+      // Auch die Modellantwort bleibt Text, selbst wenn sie HTML enthält.
+      document.querySelector("#modell-text").textContent = daten.antwort;
+      document.querySelector("#modell-name").textContent = `${daten.anbieter} · ${daten.modell}`;
+      document.querySelector("#modell-lauf").href = `/rag/laeufe/${encodeURIComponent(daten.lauf_id)}`;
+
+      const unbekannt = daten.zitatpruefung.unbekannt;
+      const warnliste = document.querySelector("#unbekannte-zitate");
+      warnliste.replaceChildren();
+      for (const zitat of unbekannt) {
+        const eintrag = document.createElement("li");
+        eintrag.textContent = zitat;
+        warnliste.append(eintrag);
+      }
+      document.querySelector("#zitatwarnung").hidden = unbekannt.length === 0;
+      modellErgebnis.hidden = false;
+    }
+
+    function setzeKnopfsperre(gesperrt) {
+      vorschauKnopf.disabled = gesperrt;
+      antwortKnopf.disabled = gesperrt;
+    }
+
+    async function ladeDokufrage(ereignis) {
       // JavaScript übernimmt das Absenden, damit die Seite sich nicht neu lädt.
       ereignis.preventDefault();
       if (vorschauKnopf.disabled) return;
 
       vorschauErgebnis.hidden = true;
+      modellErgebnis.hidden = true;
       const frage = frageFeld.value.trim();
       if (!frage) {
         vorschauStatus.textContent = "Gib bitte eine Frage ein.";
@@ -115,21 +162,29 @@
         return;
       }
 
-      vorschauKnopf.disabled = true;
-      vorschauStatus.textContent = "Fundstellen werden gesucht …";
+      // Nur der Antwortknopf darf einen Anbieteraufruf auslösen.
+      const mitAntwort = ereignis.submitter === antwortKnopf;
+      const pfad = mitAntwort ? "/rag/antwort" : "/rag/vorschau";
+      const anfrage = { frage, top_k: trefferFeld.valueAsNumber };
+      if (mitAntwort) anfrage.anbieter = anbieterFeld.value;
+
+      // Sperre beide Knöpfe, solange die Anfrage läuft.
+      setzeKnopfsperre(true);
+      vorschauStatus.textContent = mitAntwort
+        ? "Modellantwort wird angefordert …"
+        : "Fundstellen werden gesucht …";
       try {
-        // valueAsNumber liefert eine Zahl. Die API erwartet für top_k JSON ohne Anführungszeichen.
-        const antwort = await fetch("/rag/vorschau", {
+        const antwort = await fetch(pfad, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ frage, top_k: trefferFeld.valueAsNumber }),
+          body: JSON.stringify(anfrage),
         });
 
         if (!antwort.ok) {
           const fehler = await antwort.json().catch(() => null);
           vorschauStatus.textContent = typeof fehler?.detail === "string"
             ? fehler.detail
-            : `Die Vorschau konnte nicht geladen werden (HTTP ${antwort.status}).`;
+            : `Die Anfrage ist fehlgeschlagen (HTTP ${antwort.status}).`;
           return;
         }
 
@@ -140,18 +195,25 @@
         }
 
         zeigeVorschau(daten);
-        vorschauStatus.textContent = `Gefundene Abschnitte: ${daten.fundstellen.length}`;
+        if (mitAntwort) {
+          zeigeModellantwort(daten);
+          vorschauStatus.textContent = `Lauf #${daten.lauf_id} gespeichert.`;
+          await ladeLaufhistorie();
+        } else {
+          vorschauStatus.textContent = `Gefundene Abschnitte: ${daten.fundstellen.length}`;
+        }
       } catch (fehler) {
-        vorschauStatus.textContent = "Die Vorschau konnte nicht geladen werden.";
+        vorschauStatus.textContent = "Die Anfrage konnte nicht geladen werden.";
         console.error(fehler);
       } finally {
-        // Der Knopf wird auch nach einem Fehler wieder bedienbar.
-        vorschauKnopf.disabled = false;
+        // Nach Erfolg und Fehler sind beide Aktionen wieder verfügbar.
+        setzeKnopfsperre(false);
       }
     }
 
     const statusAnzeige = document.querySelector("#status");
     const liste = document.querySelector("#laufhistorie");
+    let letzteHistorienAnfrage = 0;
 
     function zeigeLauf(lauf) {
       const eintrag = document.createElement("li");
@@ -171,15 +233,19 @@
     }
 
     async function ladeLaufhistorie() {
+      const anfrageNummer = ++letzteHistorienAnfrage;
       try {
         // Die relative URL verwendet denselben Server wie die Startseite.
         // Dadurch funktioniert sie auf dem Mac und auch über den SSH-Tunnel.
-        const antwort = await fetch("/rag/laeufe?limit=10");
+        const antwort = await fetch("/rag/laeufe?limit=10", { cache: "no-store" });
         if (!antwort.ok) {
           throw new Error(`HTTP ${antwort.status}`);
         }
 
         const daten = await antwort.json();
+        // Eine ältere Antwort darf eine frischere Liste nicht überschreiben.
+        if (anfrageNummer !== letzteHistorienAnfrage) return;
+        liste.replaceChildren();
         for (const lauf of daten.laeufe) {
           zeigeLauf(lauf);
         }
@@ -188,13 +254,14 @@
           ? "Noch keine RAG-Läufe gespeichert."
           : "";
       } catch (fehler) {
+        if (anfrageNummer !== letzteHistorienAnfrage) return;
         statusAnzeige.textContent = "Die Laufhistorie konnte nicht geladen werden.";
         console.error(fehler);
       }
     }
 
-    formular.addEventListener("submit", ladeVorschau);
-    vorschauKnopf.disabled = false;
+    formular.addEventListener("submit", ladeDokufrage);
+    setzeKnopfsperre(false);
     ladeLaufhistorie();
   </script>
 </body>
