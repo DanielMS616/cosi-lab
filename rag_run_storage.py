@@ -62,18 +62,27 @@ def save_rag_run(database_path, run, sources):
     return lauf_id
 
 
-def load_rag_run(database_path, run_id):
-    """Liest einen gespeicherten Lauf schreibgeschützt oder gibt None zurück."""
+def _oeffne_nur_zum_lesen(database_path):
+    """Öffnet SQLite schreibgeschützt und liefert Zeilen mit Spaltennamen."""
     # mode=ro verhindert Änderungen und legt keine fehlende Datei an.
     database_uri = Path(database_path).resolve().as_uri() + "?mode=ro"
-    with closing(sqlite3.connect(database_uri, uri=True)) as db:
-        db.row_factory = sqlite3.Row
+    db = sqlite3.connect(database_uri, uri=True)
+    db.row_factory = sqlite3.Row
+    return db
 
-        # Die gemeinsame Datei kann zunächst nur Temperaturläufe enthalten.
-        hat_rag_tabelle = db.execute("""
-            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rag_runs'
-        """).fetchone()
-        if hat_rag_tabelle is None:
+
+def _rag_tabelle_vorhanden(db):
+    # Die gemeinsame Datei kann zunächst nur Temperaturläufe enthalten.
+    eintrag = db.execute("""
+        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'rag_runs'
+    """).fetchone()
+    return eintrag is not None
+
+
+def load_rag_run(database_path, run_id):
+    """Liest einen gespeicherten Lauf schreibgeschützt oder gibt None zurück."""
+    with closing(_oeffne_nur_zum_lesen(database_path)) as db:
+        if not _rag_tabelle_vorhanden(db):
             return None
 
         row = db.execute("SELECT * FROM rag_runs WHERE id = ?", (run_id,)).fetchone()
@@ -85,3 +94,24 @@ def load_rag_run(database_path, run_id):
     # SQLite speichert die Quellen als JSON-Text; die Ansicht braucht die Liste.
     lauf["sources"] = json.loads(lauf.pop("sources_json"))
     return lauf
+
+
+def list_rag_runs(database_path, limit):
+    """Liest die zuletzt gespeicherten RAG-Läufe als kurze Übersicht."""
+    if not Path(database_path).exists():
+        return []
+
+    with closing(_oeffne_nur_zum_lesen(database_path)) as db:
+        if not _rag_tabelle_vorhanden(db):
+            return []
+
+        # Je höher die ID, desto später wurde der Lauf gespeichert.
+        # Prompt, Antwort und Fundstellen bleiben dem Detailabruf vorbehalten.
+        zeilen = db.execute("""
+            SELECT id, question, provider, model, requested_at_utc
+            FROM rag_runs
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        return [dict(zeile) for zeile in zeilen]

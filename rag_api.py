@@ -4,7 +4,7 @@ import sqlite3
 from json import JSONDecodeError
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from modell_fehler import (
@@ -15,13 +15,28 @@ from modell_fehler import (
 from rag_ablauf import beantworte_und_speichere
 from rag_embeddings import E5_MODELL
 from rag_prompt import baue_prompt
-from rag_run_storage import RUN_DATABASE, load_rag_run
+from rag_run_storage import RUN_DATABASE, list_rag_runs, load_rag_run
 
 
 app = FastAPI(title="Cosi-Lab RAG-API")
 
 # Die Lauf-ID ist in SQLite eine vorzeichenbehaftete 64-Bit-Ganzzahl.
 GROESSTE_LAUF_ID = 2**63 - 1
+
+
+@app.get("/rag/laeufe")
+def lese_rag_laeufe(limit: Annotated[int, Query(ge=1, le=100)] = 10):
+    """Gibt die zuletzt gespeicherten RAG-Läufe als Übersicht zurück."""
+    try:
+        # limit kommt aus der URL, etwa /rag/laeufe?limit=3.
+        laeufe = list_rag_runs(RUN_DATABASE, limit)
+    except sqlite3.Error as fehler:
+        raise HTTPException(
+            status_code=500, detail="Die RAG-Läufe konnten nicht gelesen werden."
+        ) from fehler
+
+    # Auch ohne gespeicherte Läufe ist die Übersicht eine erfolgreiche Antwort.
+    return {"laeufe": laeufe}
 
 
 @app.get("/rag/laeufe/{lauf_id}")

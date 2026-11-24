@@ -131,3 +131,48 @@ class RagApiTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(post.status_code, status, post.text)
                 self.assertEqual(post.json(), {"detail": str(fehler)})
                 self.assertFalse(self.datenbank.exists())
+
+    async def test_laufuebersicht_zeigt_neueste_laeufe_und_beachtet_limit(self):
+        modellantwort = {
+            "text": "Nicht belegt: Sollbreite.",
+            "model": "gpt-test",
+            "requested_at_utc": "2026-11-24T09:00:00+00:00",
+            "client_duration_ms": 100,
+        }
+
+        # Speichere zwei Läufe über die API. Beide bekommen denselben Zeitstempel,
+        # damit wir prüfen können, ob die Übersicht nach Lauf-ID sortiert.
+        with (
+            patch("rag_api.RUN_DATABASE", self.datenbank),
+            patch("rag_api.suche_fuer_api", return_value=(FUNDSTELLEN, 200, 30)),
+            patch("rag_ablauf.rufe_antwortmodell_auf", return_value=modellantwort),
+        ):
+            ids = []
+            for frage in (FRAGE, "Was steht in der Zeichnung?"):
+                post = await self.client.post(
+                    "/rag/antwort", json={"frage": frage, "anbieter": "gpt"}
+                )
+                self.assertEqual(post.status_code, 200, post.text)
+                ids.append(post.json()["lauf_id"])
+
+            alle = await self.client.get("/rag/laeufe")
+            einzeln = await self.client.get("/rag/laeufe?limit=1")
+            ungueltig = await self.client.get("/rag/laeufe?limit=0")
+
+        self.assertEqual(alle.status_code, 200, alle.text)
+        laeufe = alle.json()["laeufe"]
+        self.assertEqual([lauf["id"] for lauf in laeufe], [ids[1], ids[0]])
+        self.assertEqual(einzeln.status_code, 200, einzeln.text)
+        self.assertEqual(einzeln.json()["laeufe"], laeufe[:1])
+        self.assertEqual(
+            set(laeufe[0]), {"id", "question", "provider", "model", "requested_at_utc"}
+        )
+        self.assertEqual(ungueltig.status_code, 422, ungueltig.text)
+
+    async def test_leere_laufuebersicht_legt_keine_datenbank_an(self):
+        with patch("rag_api.RUN_DATABASE", self.datenbank):
+            antwort = await self.client.get("/rag/laeufe")
+
+        self.assertEqual(antwort.status_code, 200, antwort.text)
+        self.assertEqual(antwort.json(), {"laeufe": []})
+        self.assertFalse(self.datenbank.exists())
