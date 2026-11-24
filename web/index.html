@@ -25,6 +25,7 @@
     pre { border: 1px solid GrayText; padding: .75rem; }
     details + details { margin-top: .75rem; }
     #modell-technik { margin: .75rem 0; }
+    .aehnlichkeit { font-size: .9em; }
     .messwerte {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -156,7 +157,7 @@
     let aktuelleTechnik = null;
 
     function zeigeFundstellen(zielListe, fundstellen) {
-      // Dieselbe Darstellung für die Vorschau und die gespeicherten Läufe.
+      // Vorschau, neue Antwort und gespeicherter Lauf zeigen Fundstellen gleich an.
       zielListe.replaceChildren();
 
       for (const fundstelle of fundstellen) {
@@ -164,11 +165,22 @@
         const titel = document.createElement("strong");
         titel.textContent = `${fundstelle.datei}:${fundstelle.startzeile}-${fundstelle.endzeile}`;
 
+        // Runde den vorhandenen Suchwert nur für die Anzeige, ohne ihn umzurechnen.
+        const aehnlichkeit = document.createElement("span");
+        aehnlichkeit.className = "aehnlichkeit";
+        const wert = Number.isFinite(fundstelle.wert)
+          ? fundstelle.wert.toLocaleString("de-DE", {
+              minimumFractionDigits: 3,
+              maximumFractionDigits: 3,
+            })
+          : "nicht erfasst";
+        aehnlichkeit.textContent = ` · Ähnlichkeit: ${wert}`;
+
         // Auch Text mit HTML-Zeichen bleibt unverändert lesbar.
         const ausschnitt = document.createElement("p");
         ausschnitt.className = "quellentext";
         ausschnitt.textContent = fundstelle.text;
-        eintrag.append(titel, ausschnitt);
+        eintrag.append(titel, aehnlichkeit, ausschnitt);
         zielListe.append(eintrag);
       }
     }
