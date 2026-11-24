@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from rag_ablauf import beantworte_und_speichere
+from rag_embeddings import E5_MODELL
 from rag_prompt import baue_prompt
 from rag_run_storage import RUN_DATABASE, load_rag_run
 
@@ -56,13 +57,8 @@ class AntwortAnfrage(VorschauAnfrage):
     anbieter: Literal["gpt", "gemini"]
 
 
-def bereite_rag_anfrage_vor(anfrage):
-    """Bereitet Fundstellen und Prompt für beide POST-Endpunkte vor."""
-    # Leerzeichen am Rand entfernen. Eine leere Frage soll keine Suche auslösen.
-    frage = anfrage.frage.strip()
-    if not frage:
-        raise HTTPException(status_code=422, detail="Die Frage darf nicht leer sein.")
-
+def suche_fuer_api(frage, top_k):
+    """Ruft die gemeinsame Suche auf und meldet Datenbankfehler per HTTP."""
     # Erst hier die Suchabhängigkeiten laden. Der Abruf aus SQLite braucht sie nicht.
     from psycopg import OperationalError
     from psycopg.errors import UndefinedTable
@@ -70,8 +66,7 @@ def bereite_rag_anfrage_vor(anfrage):
     from rag_suche import suche_fuer_frage
 
     try:
-        # Die Antwort braucht zusätzlich die beiden Messwerte für die Laufhistorie.
-        fundstellen, e5_load_ms, retrieval_ms = suche_fuer_frage(frage, anfrage.top_k)
+        return suche_fuer_frage(frage, top_k)
     except SystemExit as fehler:
         # Die bisherige Suche beendet die CLI, wenn das Datenbankpasswort fehlt.
         # Hier melden wir den Fehler per HTTP, damit der Server weiterläuft.
@@ -82,6 +77,17 @@ def bereite_rag_anfrage_vor(anfrage):
         raise HTTPException(
             status_code=503, detail="Prüfe PostgreSQL und führe bei Bedarf rag_import.py aus."
         ) from fehler
+
+
+def bereite_rag_anfrage_vor(anfrage):
+    """Bereitet Fundstellen und Prompt für beide POST-Endpunkte vor."""
+    # Leerzeichen am Rand entfernen. Eine leere Frage soll keine Suche auslösen.
+    frage = anfrage.frage.strip()
+    if not frage:
+        raise HTTPException(status_code=422, detail="Die Frage darf nicht leer sein.")
+
+    # Beim Speichern des Laufs brauchen wir zusätzlich die beiden Messwerte.
+    fundstellen, e5_load_ms, retrieval_ms = suche_fuer_api(frage, anfrage.top_k)
 
     # Ein leerer Suchbestand liefert keine Fundstellen und deshalb keinen Prompt.
     prompt = baue_prompt(frage, fundstellen) if fundstellen else None
@@ -119,9 +125,6 @@ def erstelle_antwort(anfrage: AntwortAnfrage):
     if not vorschau["fundstellen"]:
         # Ohne Fundstellen gibt es keinen Modellaufruf und keinen neuen Lauf.
         return antwortdaten
-
-    # Auch der GET-Endpunkt soll ohne gestartete E5-Suche nutzbar bleiben.
-    from rag_embeddings import E5_MODELL
 
     # Dieselbe Funktion wie in der CLI: aufrufen, Zitate prüfen, speichern.
     ergebnis, zitatpruefung, lauf_id = beantworte_und_speichere(
