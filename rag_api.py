@@ -7,7 +7,11 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, HTTPException, Path
 from pydantic import BaseModel, Field
 
-from modell_fehler import ModellschluesselFehlt
+from modell_fehler import (
+    ModellschluesselFehlt,
+    ModellverbindungFehlgeschlagen,
+    ModellzeitUeberschritten,
+)
 from rag_ablauf import beantworte_und_speichere
 from rag_embeddings import E5_MODELL
 from rag_prompt import baue_prompt
@@ -143,6 +147,11 @@ def erstelle_antwort(anfrage: AntwortAnfrage):
     except ModellschluesselFehlt as fehler:
         # Die Meldung enthält nur den Variablennamen, keinen Schlüsselwert.
         raise HTTPException(status_code=503, detail=str(fehler)) from fehler
+    except ModellverbindungFehlgeschlagen as fehler:
+        # Unsere feste Meldung enthält keine Antwort oder Details des Anbieters.
+        raise HTTPException(status_code=502, detail=str(fehler)) from fehler
+    except ModellzeitUeberschritten as fehler:
+        raise HTTPException(status_code=504, detail=str(fehler)) from fehler
 
     # Fülle die Antwortfelder mit den Ergebnissen des gespeicherten Laufs.
     antwortdaten.update(

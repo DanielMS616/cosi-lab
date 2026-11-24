@@ -4,11 +4,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from httpx import Client, NetworkError, ProxyError, RemoteProtocolError, TimeoutException
 
-from modell_fehler import ModellschluesselFehlt
+from modell_fehler import (
+    ModellschluesselFehlt,
+    ModellverbindungFehlgeschlagen,
+    ModellzeitUeberschritten,
+)
 
 
 GEMINI_MODEL = "gemini-3.5-flash-lite"
+GEMINI_TIMEOUT_SEKUNDEN = 30
 
 
 def generate_gemini_report(prompt, *, max_output_tokens=120):
@@ -21,14 +27,27 @@ def generate_gemini_report(prompt, *, max_output_tokens=120):
         # Derselbe Fehlertyp wie bei GPT, damit die API beide Fälle erkennt.
         raise ModellschluesselFehlt("GEMINI_API_KEY fehlt. Prüfe die lokale .env.")
 
-    client = genai.Client(api_key=api_key)
-
-    # contents enthält denselben Schreibauftrag und dieselben Fakten wie bei GPT.
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(max_output_tokens=max_output_tokens),
-    )
+    try:
+        # Gib Gemini einen HTTPX-Client vor. So wissen wir, welche Fehlertypen
+        # bei einem Netzwerkproblem ankommen. Der with-Block schließt ihn wieder.
+        with Client(timeout=GEMINI_TIMEOUT_SEKUNDEN, follow_redirects=True) as http_client:
+            client = genai.Client(
+                api_key=api_key,
+                # Gemini erwartet das Zeitlimit in Millisekunden.
+                http_options=types.HttpOptions(
+                    httpx_client=http_client,
+                    timeout=GEMINI_TIMEOUT_SEKUNDEN * 1_000,
+                ),
+            )
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=max_output_tokens),
+            )
+    except TimeoutException as fehler:
+        raise ModellzeitUeberschritten("Zeitlimit beim Gemini-Aufruf überschritten.") from fehler
+    except (NetworkError, ProxyError, RemoteProtocolError) as fehler:
+        raise ModellverbindungFehlgeschlagen("Verbindung zu Gemini fehlgeschlagen.") from fehler
 
     report = response.text
     if not report or not report.strip():

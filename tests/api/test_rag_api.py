@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 
-from modell_fehler import ModellschluesselFehlt
+from modell_fehler import (
+    ModellschluesselFehlt,
+    ModellverbindungFehlgeschlagen,
+    ModellzeitUeberschritten,
+)
 from rag_api import app
 
 
@@ -104,4 +108,26 @@ class RagApiTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(post.status_code, 503, post.text)
                 self.assertEqual(post.json(), {"detail": meldung})
+                self.assertFalse(self.datenbank.exists())
+
+    async def test_netzwerkfehler_und_zeitlimit_werden_unterschieden(self):
+        # Der simulierte Fehler entsteht an derselben Stelle wie ein SDK-Fehler.
+        # Die Antwort und die Speicherung durchlaufen den echten API-Code.
+        faelle = (
+            (ModellverbindungFehlgeschlagen("Verbindung fehlgeschlagen."), 502),
+            (ModellzeitUeberschritten("Zeitlimit überschritten."), 504),
+        )
+        for fehler, status in faelle:
+            with self.subTest(status=status):
+                with (
+                    patch("rag_api.RUN_DATABASE", self.datenbank),
+                    patch("rag_api.suche_fuer_api", return_value=(FUNDSTELLEN, 200, 30)),
+                    patch("rag_ablauf.rufe_antwortmodell_auf", side_effect=fehler),
+                ):
+                    post = await self.client.post(
+                        "/rag/antwort", json={"frage": FRAGE, "anbieter": "gpt"}
+                    )
+
+                self.assertEqual(post.status_code, status, post.text)
+                self.assertEqual(post.json(), {"detail": str(fehler)})
                 self.assertFalse(self.datenbank.exists())

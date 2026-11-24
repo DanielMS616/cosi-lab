@@ -2,9 +2,13 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
-from modell_fehler import ModellschluesselFehlt
+from modell_fehler import (
+    ModellschluesselFehlt,
+    ModellverbindungFehlgeschlagen,
+    ModellzeitUeberschritten,
+)
 
 
 GPT_MODEL = "gpt-4o-mini"
@@ -22,16 +26,21 @@ def generate_gpt_report(prompt, *, max_output_tokens=120):
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_ADMIN_KEY")):
         raise ModellschluesselFehlt("OPENAI_API_KEY fehlt. Prüfe die lokale .env.")
 
-    # Der Client liest OPENAI_API_KEY aus der Python-Umgebung.
-    # Bei einem Fehler versucht er es nicht automatisch erneut.
-    client = OpenAI(max_retries=0)
-
-    # Der Prompt enthält bereits den Schreibauftrag und die berechneten Zahlen.
-    raw_response = client.responses.with_raw_response.create(
-        model=GPT_MODEL,
-        input=prompt,
-        max_output_tokens=max_output_tokens,
-    )
+    # OpenAI erwartet das Zeitlimit in Sekunden. Automatische Wiederholungen
+    # bleiben ausgeschaltet.
+    client = OpenAI(max_retries=0, timeout=30.0)
+    try:
+        raw_response = client.responses.with_raw_response.create(
+            model=GPT_MODEL,
+            input=prompt,
+            max_output_tokens=max_output_tokens,
+        )
+    except APITimeoutError as fehler:
+        # Im OpenAI-SDK ist ein Timeout auch ein Verbindungsfehler.
+        # Fange den spezielleren Fehler deshalb zuerst ab.
+        raise ModellzeitUeberschritten("Zeitlimit beim GPT-Aufruf überschritten.") from fehler
+    except APIConnectionError as fehler:
+        raise ModellverbindungFehlgeschlagen("Verbindung zu GPT fehlgeschlagen.") from fehler
 
     # Der HTTP-Header liefert die Verarbeitungszeit als Text.
     try:
