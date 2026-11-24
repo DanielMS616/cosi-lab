@@ -1,8 +1,8 @@
 # Cosi-Lab – Lernversion
 
-Cosi-Lab ist ein Python-Lernprojekt mit zwei Anwendungen im Terminal. Die **Temperaturauswertung** zählt Messwerte aus CSV-Dateien und kann daraus einen Modellbericht erstellen. Die **Dokusuche** beantwortet Fragen zu lokalen Markdown-Dateien mit E5, PostgreSQL und wahlweise GPT oder Gemini. Beide Anwendungen können Modellläufe lokal in SQLite speichern und später anhand ihrer ID wieder anzeigen.
+Cosi-Lab ist ein Python-Lernprojekt mit zwei Anwendungen. Die **Temperaturauswertung** zählt im Terminal Messwerte aus CSV-Dateien und kann daraus einen Modellbericht erstellen. Die **Dokusuche** beantwortet im Browser oder Terminal Fragen zu lokalen Markdown-Dateien mit E5, PostgreSQL und wahlweise GPT oder Gemini. Beide Anwendungen speichern Modellläufe lokal in SQLite.
 
-**Stand: 24.11.2026 · Branch `rag-e5-neustart`.** Die aktuelle Dokusuche läuft über `rag_cli.py`. Der Neustart ist im [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) beschrieben; dort ist auch der Wechsel des Arbeitsordners auf dem Mac und auf Cosi-Lab festgehalten. Die Doku zur früheren Wortsuche, Weboberfläche und API bleibt in den älteren [Journaleinträgen](docs/journal/) nachvollziehbar.
+**Stand: 24.11.2026 · Branch `rag-e5-neustart`.** Die [Browseranleitung](#dokusuche-im-browser) führt von der Vorschau bis zum gespeicherten Lauf. Das [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) erklärt den Neustart der Dokusuche, den Branchwechsel und den Arbeitsordner auf Mac und Cosi-Lab.
 
 ## Datenfluss
 
@@ -12,7 +12,7 @@ Die Dokusuche nutzt **RAG** (*Retrieval-Augmented Generation*): Erst werden pass
 flowchart TB
     MD["Markdown-Dateien"] --> IMPORT["Import: Absätze mit E5 kodieren"]
     IMPORT --> PG[("PostgreSQL: Absätze und Vektoren")]
-    Q["Frage im Terminal"] --> E5["E5: Fragevektor"]
+    Q["Frage im Browser oder Terminal"] --> E5["E5: Fragevektor"]
     E5 --> SEARCH["pgvector: beste Fundstellen"]
     PG --> SEARCH
     SEARCH --> PROMPT["Prompt aus Frage und Ausschnitten"]
@@ -21,11 +21,11 @@ flowchart TB
     MODEL --> CHECK["Zitate mit Fundstellen abgleichen"]
     CHECK --> SAVE["Lauf mit Prompt, Quellen und Antwort speichern"]
     SAVE --> RUN[("SQLite: rag_runs")]
-    SAVE --> CLI["Antwort, mögliche Warnung und Lauf-ID anzeigen"]
-    RUN --> REPLAY["Lauf anhand seiner ID ansehen"]
+    SAVE --> AUSGABE["Antwort und Lauf-ID anzeigen"]
+    RUN --> REPLAY["Laufhistorie und Details lesen"]
 ```
 
-Die CLI liest die Frage, stößt die Suche an und zeigt die Ergebnisse an. `rag_suche.py` berechnet den Fragevektor und holt die Treffer aus PostgreSQL. `rag_prompt.py` baut aus Frage und Fundstellen den Prompt. Wenn eine Modellantwort angefordert ist, verbindet `rag_ablauf.py` den Modellaufruf, die Zitatprüfung und die Speicherung. Der Antwortablauf liefert Antwort, Prüfergebnis und Lauf-ID an die CLI zurück.
+`rag_api.py` liefert die Browseroberfläche aus; `rag_cli.py` bietet den Terminalzugang. Beide nutzen dieselbe Suche (`rag_suche.py`), dieselbe Promptvorlage (`rag_prompt.py`) und denselben Ablauf für Modellaufruf, Zitatprüfung und Speicherung (`rag_ablauf.py`).
 
 Die **Temperaturauswertung** nimmt einen anderen Weg: CSV → Kennzahlen → optionaler GPT- oder Gemini-Bericht → SQLite-Tabelle `model_runs`. Der Bericht lässt sich anschließend als Textdatei exportieren. Die Temperaturauswertung braucht kein PostgreSQL.
 
@@ -43,13 +43,13 @@ Alle Befehle laufen im Projektordner. Als Python-Version ist **3.14** vorgesehen
 python3 -m venv .venv
 ```
 
-Verwende danach `.venv/bin/python`. Für das reine Zählen von Temperaturwerten und das Lesen vorhandener SQLite-Läufe genügt die Python-Standardbibliothek. Für die vollständige Einrichtung installierst du beide Paketlisten:
+Verwende danach `.venv/bin/python`. Für das reine Zählen von Temperaturwerten und das Lesen vorhandener SQLite-Läufe im Terminal genügt die Python-Standardbibliothek. Für die Dokusuche einschließlich Browseroberfläche installierst du:
 
 ```bash
-.venv/bin/python -m pip install -r requirements.txt -r requirements-rag.txt
+.venv/bin/python -m pip install -r requirements.txt -r requirements-rag.txt -r requirements-api.txt
 ```
 
-`requirements.txt` enthält die beiden Anbieter-SDKs und `python-dotenv`. `requirements-rag.txt` enthält Sentence Transformers, die PostgreSQL-Anbindung sowie `python-dotenv` für den Zugriff auf die RAG-Datenbank. Für PostgreSQL brauchst du außerdem Docker mit Compose auf demselben Rechner, auf dem du importierst und suchst.
+`requirements.txt` enthält die Pakete für die Modellanbieter und die `.env`-Datei. `requirements-rag.txt` bringt E5 und die PostgreSQL-Anbindung mit, `requirements-api.txt` die Web-API und Uvicorn. Für PostgreSQL brauchst du Docker mit Compose auf dem Rechner, auf dem die Dokusuche läuft.
 
 Lege die benötigten Werte in der lokalen `.env` im Projektordner ab. Die Beispielwerte ersetzt du durch deine eigenen Werte:
 
@@ -62,7 +62,7 @@ RAG_POSTGRES_PASSWORD=hier_eigenes_passwort_eintragen
 # GEMINI_API_KEY=hier_eigenen_schluessel_eintragen
 ```
 
-Die Anbieterzeile aktivierst du, indem du das führende `#` entfernst. `--show-prompt` allein braucht keinen GPT- oder Gemini-Schlüssel. Die RAG-Vorschau benötigt dennoch E5 und PostgreSQL, um Fundstellen zu suchen. Beim ersten Laden lädt Sentence Transformers das E5-Modell herunter, sofern es noch nicht im lokalen Cache liegt. Die `.env` wird von Git ignoriert.
+Für eine Modellantwort entfernst du das führende `#` bei der Zeile des gewählten Anbieters und trägst dessen Schlüssel ein. Die Vorschau benötigt E5 und PostgreSQL. Wenn das E5-Modell noch nicht im lokalen Cache liegt, lädt Sentence Transformers es beim ersten Bedarf herunter. Danach verwendet der laufende Python-Prozess dasselbe Modell weiter. Die `.env` wird von Git ignoriert.
 
 ## Temperaturdaten auswerten
 
@@ -103,7 +103,7 @@ Der Standardbefehl im Container wertet `examples/temperature_sample.csv` aus. `d
 
 ### Datenbank starten und Dokumente importieren
 
-Starte auf dem Mac bei Bedarf zuerst Docker Desktop. Auf Cosi-Lab kannst du `sudo docker …` verwenden, falls dein Benutzer Docker nicht direkt ausführen darf.
+Starte auf dem Mac bei Bedarf zuerst Docker Desktop. Auf Cosi-Lab kannst du `sudo docker …` verwenden, falls dein Benutzer Docker nicht direkt ausführen darf. Importiere die Dokumente beim ersten Start und nach Änderungen an den Beispieldateien. Bei einem gewöhnlichen Neustart bleibt der Suchbestand im Docker-Volume erhalten.
 
 ```bash
 docker compose -f compose.rag.yaml up -d --wait
@@ -126,7 +126,52 @@ docker compose -f compose.rag.yaml exec -T rag-db \
 
 Die zweite Abfrage sollte im Beispiel vier Absätze pro Datei mit je 384 Dimensionen zeigen. Nach Änderungen am Dokumentbestand führst du `rag_import.py` erneut aus. Der Import ersetzt die vorhandenen Absätze in einer Transaktion; schlägt das Einfügen fehl, bleibt der bisherige Bestand erhalten. PostgreSQL hält seine Daten im Docker-Volume `cosi-e5-rag_rag-db-data`. Mit `docker compose -f compose.rag.yaml stop` kannst du den Dienst anhalten und mit `up -d --wait` wieder starten, ohne das Volume zu löschen.
 
-### Fundstellen finden und Antworten anfordern
+### Dokusuche im Browser
+
+**Auf dem Mac:** Führe den [Schnellstart](#schnellstart) aus, starte PostgreSQL und importiere beim ersten Mal die Dokumente wie oben beschrieben. Starte aus dem Projektordner die API:
+
+```bash
+.venv/bin/python -m uvicorn rag_api:app --host 127.0.0.1 --port 8010
+```
+
+Öffne [http://127.0.0.1:8010/](http://127.0.0.1:8010/) im Browser.
+
+**Auf Cosi-Lab vom Mac aus:** Verbinde dich mit `ssh cosi-vpn`. Der Alias setzt den eingerichteten [Fernzugriff](docs/aufbau-fernzugriff.md) voraus. Pakete, `.env` und Suchbestand müssen auf Cosi-Lab eingerichtet sein. Wenn das bereits erledigt ist, kannst du im SSH-Terminal so starten:
+
+```bash
+cd ~/cosi-lab-e5-neustart
+sudo docker compose -f compose.rag.yaml up -d --wait
+.venv/bin/python -m uvicorn rag_api:app --host 127.0.0.1 --port 8010
+```
+
+Lass Uvicorn laufen. Öffne in einem zweiten Mac-Terminal den Tunnel:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:8011:127.0.0.1:8010 cosi-vpn
+```
+
+Öffne [http://127.0.0.1:8011/](http://127.0.0.1:8011/) im Mac-Browser. Der Tunnel leitet den Mac-Port `8011` zum Port `8010` auf Cosi-Lab weiter. Die Browseroberfläche nutzt die SQLite-Datei des Rechners, auf dem Uvicorn läuft. Mac und Cosi-Lab haben deshalb getrennte Laufhistorien.
+
+**Ein Probelauf mit H-12:**
+
+1. Frage **„Wie breit soll die Halterung H-12 sein?“** eingeben, Trefferzahl **3** einstellen und **Vorschau laden** wählen. Die Fundstellen `6-7`, `3-4` und `9-11` aus `masspruefung-h12.md` erscheinen mit Ähnlichkeitswert; der Prompt lässt sich aufklappen. Die Vorschau ruft kein Antwortmodell auf und speichert keinen Lauf.
+2. GPT oder Gemini wählen und **Antwort anfordern** klicken. Dabei gehen die Frage und die ausgewählten Ausschnitte an den Anbieter. Die erwartete Antwort lässt das Sollmaß offen und verweist mit Fundstelle `6-7` auf die separate Zeichnung. Die neue Lauf-ID erscheint in der Historie.
+3. **Technische Details** unter der neuen Antwort aufklappen. Für denselben Lauf lassen sich Antwort, Fundstellen, Prompt, Laufzeiten und Tokenzahlen später wieder in der Historie öffnen.
+
+### API-Endpunkte
+
+Die interaktive API-Dokumentation ist unter `/docs` erreichbar. Ohne E5, PostgreSQL und Anbieter-Schlüssel lassen sich die Startseite und vorhandene SQLite-Läufe öffnen.
+
+| Endpunkt | Zweck |
+| --- | --- |
+| `GET /` | Browseroberfläche laden. |
+| `POST /rag/vorschau` | Mit `frage` und optional `top_k` die Fundstellen und den Prompt ansehen. `top_k` liegt zwischen 1 und 20; Standard ist 3. |
+| `POST /rag/antwort` | Dieselbe Anfrage mit `anbieter` (`gpt` oder `gemini`) beantworten. Bei gefundenen Abschnitten speichert die API den Lauf. |
+| `GET /rag/laeufe?limit=10` | Neueste gespeicherte Läufe auflisten. Das Limit liegt zwischen 1 und 100; Standard ist 10. |
+| `GET /rag/laeufe/{lauf_id}` | Einen Lauf mit Antwort, Prompt, Fundstellen und Messwerten lesen. |
+
+### Fundstellen und Antworten im Terminal
 
 ```bash
 .venv/bin/python rag_cli.py \
@@ -138,7 +183,7 @@ Die zweite Abfrage sollte im Beispiel vier Absätze pro Datei mit je 384 Dimensi
   --top-k 3 --show-prompt
 ```
 
-E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortiert die bereits gespeicherten Absatzvektoren nach Kosinusabstand. Die CLI zeigt die **Kosinusähnlichkeit** als `1 - Abstand`: Größere Werte stehen für höhere Ähnlichkeit. Sie sind keine Wahrscheinlichkeit dafür, dass ein Absatz die Frage beantwortet.
+E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortiert die bereits gespeicherten Absatzvektoren nach Kosinusabstand. Browser und CLI zeigen die **Kosinusähnlichkeit** als `1 - Abstand`: Größere Werte stehen für höhere Ähnlichkeit. Ob ein Absatz die Antwort tatsächlich belegt, muss anhand seines Inhalts geprüft werden.
 
 | Option | Wirkung |
 | --- | --- |
@@ -159,7 +204,7 @@ Die Anbieter erhalten bei gleichen Suchergebnissen denselben Kontext. GPT nutzt 
 
 ### Zitate prüfen
 
-Die Zitatprüfung gleicht erkannte Zitate mit den Fundstellen aus dem Prompt ab. Pfad und Zeilenbereich müssen genau übereinstimmen: Steht `examples/rag/masspruefung-h12.md:6-7` im Prompt, ist ein Zitat derselben Datei mit `6-8` unbekannt. Die CLI zeigt dafür eine Warnung an; der Lauf wird trotzdem gespeichert. Eine Antwort ohne Zitat löst keine Warnung aus. Ob der zitierte Absatz die Aussage tatsächlich belegt, prüft diese Funktion nicht.
+Die Zitatprüfung gleicht erkannte Zitate mit den Fundstellen aus dem Prompt ab. Pfad und Zeilenbereich müssen genau übereinstimmen: Steht `examples/rag/masspruefung-h12.md:6-7` im Prompt, ist ein Zitat derselben Datei mit `6-8` unbekannt. Die CLI und die frisch erzeugte Antwort im Browser zeigen dafür eine Warnung an; der Lauf wird trotzdem gespeichert. Eine Antwort ohne Zitat löst keine Warnung aus. Ob der zitierte Absatz die Aussage tatsächlich belegt, prüft diese Funktion nicht.
 
 ### Laufhistorie und Messwerte
 
@@ -179,7 +224,7 @@ Ersetze `1` durch die ausgegebene **RAG-Lauf-ID**. Die Ansicht zeigt den damalig
 | Feld | Bedeutung |
 | --- | --- |
 | `requested_at_utc` | UTC-Zeitpunkt unmittelbar vor dem Anbieteraufruf. |
-| `e5_load_ms` | Dauer des gesamten E5-Ladevorgangs beim Start eines RAG-Aufrufs, einschließlich der Initialisierung des Tokenizers. |
+| `e5_load_ms` | Zeit, bis E5 für die Suche bereit ist. Der erste Aufruf lädt das Modell; weitere Aufrufe im selben Prozess können gerundet `0 ms` anzeigen. |
 | `retrieval_ms` | Dauer für den Fragevektor und die Abfrage in PostgreSQL. |
 | `client_duration_ms` | Lokal gemessene Dauer des Aufrufs an GPT oder Gemini, einschließlich Client und Netzwerk. |
 | `provider_duration_ms` (RAG) / `duration_ms` (Temperatur) | Vom Anbieter gemeldete Verarbeitungszeit. Der GPT-Adapter liest sie, wenn vorhanden, aus dem Header `openai-processing-ms`. Der Gemini-Adapter erfasst sie derzeit nicht. |
@@ -191,14 +236,14 @@ Fehlende Werte bleiben in SQLite `NULL` und erscheinen in der Laufansicht als �
 ## Prüfen und reproduzieren
 
 ```bash
+.venv/bin/python -m pip install -r requirements-api-test.txt
 .venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m unittest discover -s tests/api -v
 ```
 
-Die automatisierte Testreihe enthält **zehn Tests**: sechs für die Temperaturauswertung, drei für die Zitatprüfung und einen für den RAG-Antwortablauf. Der Integrationstest simuliert die Modellantwort. Er prüft ein unbekanntes Zitat und liest den gespeicherten Prompt, die Antwort und die Fundstellen aus einer temporären SQLite-Datei zurück. Die Tests brauchen keine API-Schlüssel, kein geladenes E5-Modell und keine laufende PostgreSQL-Instanz.
+Die beiden `unittest`-Befehle starten **16 Tests**: zehn für Temperaturauswertung, Zitatprüfung und RAG-Antwortablauf sowie sechs für die API. Die API-Tests simulieren Suche und Modellantwort, prüfen die Laufhistorie mit temporären SQLite-Dateien und decken Fehlerfälle ab. Die Tests benötigen weder API-Schlüssel noch E5 oder eine laufende PostgreSQL-Instanz.
 
 Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, welche Belege die Suche findet und ob das Antwortmodell sie richtig verwendet. Am 20.11.2026 wurden sieben RAG-Fragen mit `--top-k 3` auf dem Mac ausgewertet, einschließlich zweier bereits gespeicherter H-12-Läufe. Für alle sechs Fragen mit erwarteten Belegen lagen die nötigen Absätze unter den ersten drei Treffern. GPT bestand sieben Fälle, Gemini sechs. Bei der Frage nach einer Bibliotheksöffnungszeit gab Gemini keine Uhrzeit an, nannte aber irrelevante Fundstellen. Ein angegebener Zeilenbereich stand so nicht im Prompt. Die Prüfreihe hält die Lauf-IDs fest; sie ist kein allgemeiner Modellvergleich.
-
-Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/aufbau-fernzugriff.md) beschrieben an. Verwende dort den zum Branch gehörenden Arbeitsordner (dokumentiert als `~/cosi-lab-e5-neustart`). Richte die virtuelle Umgebung und `.env` auf diesem Rechner ein, starte den lokalen PostgreSQL-Dienst und importiere die Beispiele wie oben. Die SQLite-Historie liegt auf dem Rechner, auf dem die CLI ausgeführt wurde. Eine auf dem Mac erzeugte Lauf-ID ist daher auf Cosi-Lab nicht automatisch vorhanden.
 
 ## Dateiübersicht
 
@@ -206,6 +251,7 @@ Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/a
 
 | Datei | Aufgabe |
 | --- | --- |
+| [`rag_api.py`](rag_api.py), [`web/index.html`](web/index.html) | API, Browseroberfläche und Laufhistorie für die Dokusuche. |
 | [`rag_cli.py`](rag_cli.py) | Terminalargumente lesen, Suche und Antwortablauf anstoßen und Ergebnisse anzeigen. |
 | [`rag_import.py`](rag_import.py) | Markdown-Absätze kodieren und den PostgreSQL-Suchbestand neu befüllen. |
 | [`rag_embeddings.py`](rag_embeddings.py) | E5-Modell für Import und Suche bereitstellen. |
@@ -225,6 +271,7 @@ Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/a
 | [`show_temperature_run.py`](show_temperature_run.py) | Temperaturlauf anzeigen und den Bericht nach Bestätigung exportieren. |
 | [`model_gpt.py`](model_gpt.py), [`model_gemini.py`](model_gemini.py) | Gemeinsame Anbieteradapter für die beiden Anwendungen. |
 | [`requirements.txt`](requirements.txt), [`requirements-rag.txt`](requirements-rag.txt) | Abhängigkeiten für Modellaufrufe und die lokale RAG-Suche. |
+| [`requirements-api.txt`](requirements-api.txt), [`requirements-api-test.txt`](requirements-api-test.txt) | Abhängigkeiten für die lokale Web-API und ihre Tests. |
 | [`Dockerfile`](Dockerfile), [`compose.yaml`](compose.yaml) | Python-Image und Dienst für die Temperaturauswertung. |
 | [`compose.rag.yaml`](compose.rag.yaml) | Lokaler PostgreSQL-Dienst mit pgvector, Healthcheck und Datenvolume. |
 | [`.gitignore`](.gitignore), [`.dockerignore`](.dockerignore) | Schließen unter anderem lokale Zugangsdaten und Laufdateien aus Git bzw. dem Docker-Build-Kontext aus. |
@@ -238,6 +285,7 @@ Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/a
 | [Fräse F-07](examples/rag/fraese-f07.md), [Maßprüfung H-12](examples/rag/masspruefung-h12.md), [Verstärkerrack „Nachtflug“](examples/rag/nachtflug-rack.md) | Der derzeitige Dokumentbestand der RAG-Suche. |
 | [`tests/test_temperature_storage.py`](tests/test_temperature_storage.py), [`tests/test_temperature_report_export.py`](tests/test_temperature_report_export.py) | Automatisierte Temperaturtests für SQLite-Läufe und Export. |
 | [`tests/test_rag_zitate.py`](tests/test_rag_zitate.py), [`tests/test_rag_ablauf.py`](tests/test_rag_ablauf.py) | Tests für die Zitatprüfung und das Zusammenspiel von Antwortablauf und SQLite. |
+| [`tests/api/test_rag_api.py`](tests/api/test_rag_api.py) | Tests für HTTP-Antworten, Fehlerfälle und gespeicherte Läufe. |
 | [`docs/versuche/rag-pruefreihe.md`](docs/versuche/rag-pruefreihe.md) | Sieben Fragen samt Sollantworten, erwarteten Fundstellen, Ergebnissen und Lauf-IDs. |
 | [`docs/anleitung-berichtsexport.md`](docs/anleitung-berichtsexport.md) | Kurzanleitung zum Export eines Temperaturberichts. |
 | [Hardwareaufbau](docs/aufbau-hardware.md), [Fernzugriff](docs/aufbau-fernzugriff.md) | Dokumentation zum Rechner und zu den geprüften Verbindungswegen. |
