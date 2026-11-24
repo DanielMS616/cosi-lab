@@ -23,6 +23,16 @@
     .formular-zeile { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
     pre, .quellentext { white-space: pre-wrap; overflow-wrap: anywhere; }
     pre { border: 1px solid GrayText; padding: .75rem; }
+    details + details { margin-top: .75rem; }
+    #modell-technik { margin: .75rem 0; }
+    .messwerte {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: .35rem 1rem;
+      overflow-wrap: anywhere;
+    }
+    .messwerte dt { font-weight: 600; }
+    .messwerte dd { margin: 0; }
   </style>
 </head>
 <body>
@@ -68,6 +78,11 @@
             <ul id="unbekannte-zitate"></ul>
           </div>
           <a id="modell-lauf">Gespeicherten Lauf ansehen</a>
+          <details id="modell-technik">
+            <summary>Technische Details</summary>
+            <p id="modell-technik-status" role="status"></p>
+            <div id="modell-technik-inhalt"></div>
+          </details>
         </div>
         <h3>Fundstellen</h3>
         <ol id="vorschau-fundstellen"></ol>
@@ -99,12 +114,26 @@
           <summary>Gespeicherten Prompt anzeigen</summary>
           <pre id="detail-prompt"></pre>
         </details>
+        <details>
+          <summary>Technische Details</summary>
+          <div id="detail-technik-inhalt"></div>
+        </details>
         <p><a id="detail-json">Lauf als JSON öffnen</a></p>
       </div>
     </section>
 
     <noscript>Aktiviere JavaScript für die Dokusuche und die Laufhistorie.</noscript>
   </main>
+
+  <!-- Beide Ansichten verwenden dieselbe Vorlage für die Messwerte. -->
+  <template id="technik-vorlage">
+    <h3>Zeiten</h3>
+    <dl data-zeiten class="messwerte"></dl>
+    <h3>Tokens</h3>
+    <dl data-tokens class="messwerte"></dl>
+    <h3>Suche und API-Status</h3>
+    <dl data-einstellungen class="messwerte"></dl>
+  </template>
 
   <script>
     const formular = document.querySelector("#dokufrage-formular");
@@ -120,6 +149,11 @@
     const vorschauPrompt = document.querySelector("#vorschau-prompt");
     const modellErgebnis = document.querySelector("#modell-ergebnis");
     const modellLauf = document.querySelector("#modell-lauf");
+    const modellTechnik = document.querySelector("#modell-technik");
+    const modellTechnikStatus = document.querySelector("#modell-technik-status");
+    const modellTechnikInhalt = document.querySelector("#modell-technik-inhalt");
+    const technikVorlage = document.querySelector("#technik-vorlage");
+    let aktuelleTechnik = null;
 
     function zeigeFundstellen(zielListe, fundstellen) {
       // Dieselbe Darstellung für die Vorschau und die gespeicherten Läufe.
@@ -150,7 +184,12 @@
       // Auch die Modellantwort bleibt Text, selbst wenn sie HTML enthält.
       document.querySelector("#modell-text").textContent = daten.antwort;
       document.querySelector("#modell-name").textContent = `${daten.anbieter} · ${daten.modell}`;
-      modellLauf.href = `/rag/laeufe/${encodeURIComponent(daten.lauf_id)}`;
+      const laufPfad = `/rag/laeufe/${encodeURIComponent(daten.lauf_id)}`;
+      modellLauf.href = laufPfad;
+      aktuelleTechnik = { pfad: laufPfad, laedt: false, geladen: false };
+      modellTechnik.open = false;
+      modellTechnikStatus.textContent = "";
+      modellTechnikInhalt.replaceChildren();
 
       const unbekannt = daten.zitatpruefung.unbekannt;
       const warnliste = document.querySelector("#unbekannte-zitate");
@@ -176,6 +215,7 @@
 
       vorschauErgebnis.hidden = true;
       modellErgebnis.hidden = true;
+      aktuelleTechnik = null;
       const frage = frageFeld.value.trim();
       if (!frage) {
         vorschauStatus.textContent = "Gib bitte eine Frage ein.";
@@ -247,6 +287,82 @@
       return `${lauf.provider} · ${lauf.model} · ${zeit}`;
     }
 
+    function formatiereMesswert(wert, einheit = "") {
+      // Nur ein fehlender Wert bekommt den Ersatztext. 0 ist ein Messwert.
+      if (wert === null || wert === undefined) return "nicht erfasst";
+      return `${wert.toLocaleString("de-DE")}${einheit}`;
+    }
+
+    function zeigeWerte(ziel, zeilen) {
+      // Eine Beschreibungsliste verbindet jeden Namen (dt) mit seinem Wert (dd).
+      ziel.replaceChildren();
+      for (const [name, wert] of zeilen) {
+        const beschriftung = document.createElement("dt");
+        const anzeige = document.createElement("dd");
+        beschriftung.textContent = name;
+        anzeige.textContent = wert;
+        ziel.append(beschriftung, anzeige);
+      }
+    }
+
+    function zeigeTechnik(ziel, lauf) {
+      // Fülle eine Kopie der Vorlage. Beide Ansichten zeigen dieselben Felder.
+      const inhalt = technikVorlage.content.cloneNode(true);
+      zeigeWerte(inhalt.querySelector("[data-zeiten]"), [
+        ["Zeit bis E5 bereit war", formatiereMesswert(lauf.e5_load_ms, " ms")],
+        ["Suche (E5 und PostgreSQL)", formatiereMesswert(lauf.retrieval_ms, " ms")],
+        ["Modellaufruf (lokal gemessen)", formatiereMesswert(lauf.client_duration_ms, " ms")],
+        ["Verarbeitungszeit laut Anbieter", formatiereMesswert(lauf.provider_duration_ms, " ms")],
+      ]);
+      zeigeWerte(inhalt.querySelector("[data-tokens]"), [
+        ["Eingabetokens", formatiereMesswert(lauf.input_tokens)],
+        ["Ausgabetokens", formatiereMesswert(lauf.output_tokens)],
+        ["Limit für Ausgabetokens", formatiereMesswert(lauf.max_output_tokens)],
+      ]);
+
+      // Ein SQL-NULL bei top_k bedeutet ausdrücklich: kein Trefferlimit.
+      const einstellungen = [
+        ["Suchmodell", lauf.retrieval_model ?? "nicht erfasst"],
+        ["Trefferlimit (Top-k)", lauf.top_k === null ? "alle" : formatiereMesswert(lauf.top_k)],
+        ["API-Status", lauf.api_status ?? "nicht erfasst"],
+      ];
+      if (lauf.incomplete_reason) {
+        einstellungen.push(["Grund für unvollständige Antwort", lauf.incomplete_reason]);
+      }
+      zeigeWerte(inhalt.querySelector("[data-einstellungen]"), einstellungen);
+      ziel.replaceChildren(inhalt);
+    }
+
+    async function holeGespeichertenLauf(pfad) {
+      // GET liest aus SQLite. Suche und Modellaufruf werden nicht wiederholt.
+      const antwort = await fetch(pfad);
+      if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+      return antwort.json();
+    }
+
+    async function ladeModellTechnik() {
+      const stand = aktuelleTechnik;
+      // Nur beim Aufklappen laden. Bereits geladene Werte bleiben sichtbar.
+      if (!modellTechnik.open || !stand || stand.laedt || stand.geladen) return;
+
+      stand.laedt = true;
+      modellTechnikStatus.textContent = "Technische Details werden geladen …";
+      try {
+        const lauf = await holeGespeichertenLauf(stand.pfad);
+        // Eine inzwischen neu angeforderte Antwort hat ihren eigenen Stand.
+        if (stand !== aktuelleTechnik) return;
+        zeigeTechnik(modellTechnikInhalt, lauf);
+        stand.geladen = true;
+        modellTechnikStatus.textContent = "";
+      } catch (fehler) {
+        if (stand !== aktuelleTechnik) return;
+        modellTechnikStatus.textContent = "Messwerte konnten nicht geladen werden. Klappe die Details erneut auf.";
+        console.error(fehler);
+      } finally {
+        stand.laedt = false;
+      }
+    }
+
     async function ladeLaufdetails(pfad) {
       const anfrageNummer = ++letzteDetailAnfrage;
       laufDetails.hidden = false;
@@ -256,12 +372,7 @@
       detailTitel.focus();
 
       try {
-        // GET liest den gespeicherten Lauf aus SQLite. Es startet keine neue Suche.
-        const antwort = await fetch(pfad);
-        if (!antwort.ok) {
-          throw new Error(`HTTP ${antwort.status}`);
-        }
-        const lauf = await antwort.json();
+        const lauf = await holeGespeichertenLauf(pfad);
         // Bei schnellen Klicks zählt nur der zuletzt ausgewählte Lauf.
         if (anfrageNummer !== letzteDetailAnfrage) return;
 
@@ -272,6 +383,7 @@
         zeigeFundstellen(document.querySelector("#detail-fundstellen"), lauf.sources);
         document.querySelector("#detail-prompt").textContent = lauf.prompt;
         document.querySelector("#detail-prompt-klappe").open = false;
+        zeigeTechnik(document.querySelector("#detail-technik-inhalt"), lauf);
         document.querySelector("#detail-json").href = pfad;
         detailStatus.textContent = "";
         detailInhalt.hidden = false;
@@ -338,6 +450,7 @@
 
     formular.addEventListener("submit", ladeDokufrage);
     modellLauf.addEventListener("click", oeffneLauflink);
+    modellTechnik.addEventListener("toggle", ladeModellTechnik);
     setzeKnopfsperre(false);
     ladeLaufhistorie();
   </script>
