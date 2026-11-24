@@ -59,7 +59,6 @@
       <p id="vorschau-status" role="status"></p>
       <div id="vorschau-ergebnis" hidden>
         <p id="vorschau-frage"></p>
-
         <div id="modell-ergebnis" hidden>
           <h3>Modellantwort</h3>
           <p id="modell-text" class="quellentext"></p>
@@ -68,9 +67,8 @@
             <p><strong>Diese Zitate standen nicht im Prompt:</strong></p>
             <ul id="unbekannte-zitate"></ul>
           </div>
-          <a id="modell-lauf">Gespeicherten Lauf als JSON öffnen</a>
+          <a id="modell-lauf">Gespeicherten Lauf ansehen</a>
         </div>
-
         <h3>Fundstellen</h3>
         <ol id="vorschau-fundstellen"></ol>
         <details>
@@ -82,9 +80,27 @@
 
     <section aria-labelledby="historie-titel">
       <h2 id="historie-titel">Letzte RAG-Läufe</h2>
-      <p>Die Links öffnen den jeweiligen Lauf als JSON.</p>
+      <p>Wähle einen Lauf aus, um die gespeicherte Antwort und ihre Fundstellen zu sehen.</p>
       <p id="status" role="status">Laufhistorie wird geladen …</p>
       <ul id="laufhistorie"></ul>
+    </section>
+
+    <section id="lauf-details" aria-labelledby="detail-titel" hidden>
+      <h2 id="detail-titel" tabindex="-1">Gespeicherter Lauf</h2>
+      <p id="detail-status" role="status"></p>
+      <div id="detail-inhalt" hidden>
+        <p id="detail-frage"></p>
+        <p id="detail-metadaten"></p>
+        <h3>Antwort</h3>
+        <p id="detail-antwort" class="quellentext"></p>
+        <h3>Fundstellen</h3>
+        <ol id="detail-fundstellen"></ol>
+        <details id="detail-prompt-klappe">
+          <summary>Gespeicherten Prompt anzeigen</summary>
+          <pre id="detail-prompt"></pre>
+        </details>
+        <p><a id="detail-json">Lauf als JSON öffnen</a></p>
+      </div>
     </section>
 
     <noscript>Aktiviere JavaScript für die Dokusuche und die Laufhistorie.</noscript>
@@ -103,24 +119,29 @@
     const vorschauFundstellen = document.querySelector("#vorschau-fundstellen");
     const vorschauPrompt = document.querySelector("#vorschau-prompt");
     const modellErgebnis = document.querySelector("#modell-ergebnis");
+    const modellLauf = document.querySelector("#modell-lauf");
 
-    function zeigeVorschau(daten) {
-      vorschauFrage.textContent = daten.frage;
-      vorschauFundstellen.replaceChildren();
+    function zeigeFundstellen(zielListe, fundstellen) {
+      // Dieselbe Darstellung für die Vorschau und die gespeicherten Läufe.
+      zielListe.replaceChildren();
 
-      for (const fundstelle of daten.fundstellen) {
+      for (const fundstelle of fundstellen) {
         const eintrag = document.createElement("li");
         const titel = document.createElement("strong");
         titel.textContent = `${fundstelle.datei}:${fundstelle.startzeile}-${fundstelle.endzeile}`;
 
-        // Ausschnitt und Prompt sind Textdaten und werden als solche eingesetzt.
+        // Auch Text mit HTML-Zeichen bleibt unverändert lesbar.
         const ausschnitt = document.createElement("p");
         ausschnitt.className = "quellentext";
         ausschnitt.textContent = fundstelle.text;
         eintrag.append(titel, ausschnitt);
-        vorschauFundstellen.append(eintrag);
+        zielListe.append(eintrag);
       }
+    }
 
+    function zeigeVorschau(daten) {
+      vorschauFrage.textContent = daten.frage;
+      zeigeFundstellen(vorschauFundstellen, daten.fundstellen);
       vorschauPrompt.textContent = daten.prompt ?? "";
       vorschauErgebnis.hidden = false;
     }
@@ -129,7 +150,7 @@
       // Auch die Modellantwort bleibt Text, selbst wenn sie HTML enthält.
       document.querySelector("#modell-text").textContent = daten.antwort;
       document.querySelector("#modell-name").textContent = `${daten.anbieter} · ${daten.modell}`;
-      document.querySelector("#modell-lauf").href = `/rag/laeufe/${encodeURIComponent(daten.lauf_id)}`;
+      modellLauf.href = `/rag/laeufe/${encodeURIComponent(daten.lauf_id)}`;
 
       const unbekannt = daten.zitatpruefung.unbekannt;
       const warnliste = document.querySelector("#unbekannte-zitate");
@@ -215,6 +236,61 @@
     const liste = document.querySelector("#laufhistorie");
     let letzteHistorienAnfrage = 0;
 
+    const laufDetails = document.querySelector("#lauf-details");
+    const detailTitel = document.querySelector("#detail-titel");
+    const detailStatus = document.querySelector("#detail-status");
+    const detailInhalt = document.querySelector("#detail-inhalt");
+    let letzteDetailAnfrage = 0;
+
+    function formatiereLaufMetadaten(lauf) {
+      const zeit = new Date(lauf.requested_at_utc).toLocaleString("de-DE");
+      return `${lauf.provider} · ${lauf.model} · ${zeit}`;
+    }
+
+    async function ladeLaufdetails(pfad) {
+      const anfrageNummer = ++letzteDetailAnfrage;
+      laufDetails.hidden = false;
+      detailInhalt.hidden = true;
+      detailTitel.textContent = "Gespeicherter Lauf";
+      detailStatus.textContent = "Lauf wird geladen …";
+      detailTitel.focus();
+
+      try {
+        // GET liest den gespeicherten Lauf aus SQLite. Es startet keine neue Suche.
+        const antwort = await fetch(pfad);
+        if (!antwort.ok) {
+          throw new Error(`HTTP ${antwort.status}`);
+        }
+        const lauf = await antwort.json();
+        // Bei schnellen Klicks zählt nur der zuletzt ausgewählte Lauf.
+        if (anfrageNummer !== letzteDetailAnfrage) return;
+
+        detailTitel.textContent = `Gespeicherter Lauf #${lauf.id}`;
+        document.querySelector("#detail-frage").textContent = lauf.question;
+        document.querySelector("#detail-metadaten").textContent = formatiereLaufMetadaten(lauf);
+        document.querySelector("#detail-antwort").textContent = lauf.response_text;
+        zeigeFundstellen(document.querySelector("#detail-fundstellen"), lauf.sources);
+        document.querySelector("#detail-prompt").textContent = lauf.prompt;
+        document.querySelector("#detail-prompt-klappe").open = false;
+        document.querySelector("#detail-json").href = pfad;
+        detailStatus.textContent = "";
+        detailInhalt.hidden = false;
+      } catch (fehler) {
+        if (anfrageNummer !== letzteDetailAnfrage) return;
+        detailStatus.textContent = "Der gespeicherte Lauf konnte nicht geladen werden.";
+        console.error(fehler);
+      }
+    }
+
+    function oeffneLauflink(ereignis) {
+      // Mit Cmd-/Ctrl-Klick bleibt das normale Öffnen eines Links möglich.
+      if (ereignis.button > 0 || ereignis.metaKey || ereignis.ctrlKey ||
+          ereignis.shiftKey || ereignis.altKey) return;
+
+      ereignis.preventDefault();
+      return ladeLaufdetails(ereignis.currentTarget.href);
+    }
+
     function zeigeLauf(lauf) {
       const eintrag = document.createElement("li");
       const link = document.createElement("a");
@@ -223,10 +299,10 @@
       // Gespeicherte Fragen als Text einsetzen, damit der Browser sie nicht
       // als HTML interpretiert.
       link.textContent = `#${lauf.id} · ${lauf.question}`;
+      link.addEventListener("click", oeffneLauflink);
 
       const details = document.createElement("small");
-      const zeit = new Date(lauf.requested_at_utc).toLocaleString("de-DE");
-      details.textContent = `${lauf.provider} · ${lauf.model} · ${zeit}`;
+      details.textContent = formatiereLaufMetadaten(lauf);
 
       eintrag.append(link, details);
       liste.append(eintrag);
@@ -261,6 +337,7 @@
     }
 
     formular.addEventListener("submit", ladeDokufrage);
+    modellLauf.addEventListener("click", oeffneLauflink);
     setzeKnopfsperre(false);
     ladeLaufhistorie();
   </script>
