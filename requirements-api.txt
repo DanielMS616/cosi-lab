@@ -2,3 +2,6 @@
 fastapi
 # Uvicorn startet den Server, der die HTTP-Anfragen entgegennimmt.
 uvicorn
+# Pydantic beschreibt hier die Eingabefelder.
+# FastAPI liest den JSON-Inhalt der Anfrage anhand dieses Modells ein und prüft die Feldtypen.
+pydantic
