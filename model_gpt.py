@@ -1,7 +1,10 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from modell_fehler import ModellschluesselFehlt
 
 
 GPT_MODEL = "gpt-4o-mini"
@@ -13,6 +16,11 @@ def generate_gpt_report(prompt, *, max_output_tokens=120):
     # __file__ ist der Pfad zu model_gpt.py. Die .env liegt direkt daneben.
     env_path = Path(__file__).with_name(".env")
     load_dotenv(env_path)
+
+    # Melde einen fehlenden Schlüssel, bevor der SDK-Client erzeugt wird.
+    # Der OpenAI-Client kennt beide Umgebungsvariablen.
+    if not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_ADMIN_KEY")):
+        raise ModellschluesselFehlt("OPENAI_API_KEY fehlt. Prüfe die lokale .env.")
 
     # Der Client liest OPENAI_API_KEY aus der Python-Umgebung.
     # Bei einem Fehler versucht er es nicht automatisch erneut.

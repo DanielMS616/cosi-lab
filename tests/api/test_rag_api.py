@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from httpx import ASGITransport, AsyncClient
 
+from modell_fehler import ModellschluesselFehlt
 from rag_api import app
 
 
@@ -83,3 +84,24 @@ class RagApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(antwort["lauf_id"])
             modellaufruf.assert_not_called()
             self.assertFalse(self.datenbank.exists())
+
+    async def test_fehlender_modellschluessel_liefert_503_ohne_lauf(self):
+        for anbieter, variable in (("gpt", "OPENAI_API_KEY"), ("gemini", "GEMINI_API_KEY")):
+            with self.subTest(anbieter=anbieter):
+                meldung = f"{variable} fehlt. Prüfe die lokale .env."
+                # Simuliere nur den Fehler. Die echte .env bleibt unangetastet.
+                with (
+                    patch("rag_api.RUN_DATABASE", self.datenbank),
+                    patch("rag_api.suche_fuer_api", return_value=(FUNDSTELLEN, 200, 30)),
+                    patch(
+                        "rag_ablauf.rufe_antwortmodell_auf",
+                        side_effect=ModellschluesselFehlt(meldung),
+                    ),
+                ):
+                    post = await self.client.post(
+                        "/rag/antwort", json={"frage": FRAGE, "anbieter": anbieter}
+                    )
+
+                self.assertEqual(post.status_code, 503, post.text)
+                self.assertEqual(post.json(), {"detail": meldung})
+                self.assertFalse(self.datenbank.exists())

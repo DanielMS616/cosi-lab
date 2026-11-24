@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, HTTPException, Path
 from pydantic import BaseModel, Field
 
+from modell_fehler import ModellschluesselFehlt
 from rag_ablauf import beantworte_und_speichere
 from rag_embeddings import E5_MODELL
 from rag_prompt import baue_prompt
@@ -127,17 +128,21 @@ def erstelle_antwort(anfrage: AntwortAnfrage):
         return antwortdaten
 
     # Dieselbe Funktion wie in der CLI: aufrufen, Zitate prüfen, speichern.
-    ergebnis, zitatpruefung, lauf_id = beantworte_und_speichere(
-        vorschau["frage"],
-        vorschau["prompt"],
-        vorschau["fundstellen"],
-        anbieter=anfrage.anbieter,
-        top_k=anfrage.top_k,
-        suchmodell=E5_MODELL,
-        e5_load_ms=e5_load_ms,
-        retrieval_ms=retrieval_ms,
-        database_path=RUN_DATABASE,
-    )
+    try:
+        ergebnis, zitatpruefung, lauf_id = beantworte_und_speichere(
+            vorschau["frage"],
+            vorschau["prompt"],
+            vorschau["fundstellen"],
+            anbieter=anfrage.anbieter,
+            top_k=anfrage.top_k,
+            suchmodell=E5_MODELL,
+            e5_load_ms=e5_load_ms,
+            retrieval_ms=retrieval_ms,
+            database_path=RUN_DATABASE,
+        )
+    except ModellschluesselFehlt as fehler:
+        # Die Meldung enthält nur den Variablennamen, keinen Schlüsselwert.
+        raise HTTPException(status_code=503, detail=str(fehler)) from fehler
 
     # Fülle die Antwortfelder mit den Ergebnissen des gespeicherten Laufs.
     antwortdaten.update(

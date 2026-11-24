@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY temperature*.py show_temperature_run.py model_gpt.py model_gemini.py ./
+COPY temperature*.py show_temperature_run.py model_gpt.py model_gemini.py modell_fehler.py ./
 COPY examples/ ./examples/
 
 USER 10001:10001

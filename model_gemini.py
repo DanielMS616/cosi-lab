@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from modell_fehler import ModellschluesselFehlt
+
 
 GEMINI_MODEL = "gemini-3.5-flash-lite"
 
@@ -16,7 +18,8 @@ def generate_gemini_report(prompt, *, max_output_tokens=120):
     load_dotenv(Path(__file__).with_name(".env"))
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY fehlt. Prüfe die lokale .env.")
+        # Derselbe Fehlertyp wie bei GPT, damit die API beide Fälle erkennt.
+        raise ModellschluesselFehlt("GEMINI_API_KEY fehlt. Prüfe die lokale .env.")
 
     client = genai.Client(api_key=api_key)
 
