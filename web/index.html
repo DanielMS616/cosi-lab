@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cosi-Lab · Laufhistorie</title>
+  <title>Cosi-Lab · Dokusuche</title>
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -12,9 +12,17 @@
       padding: 0 1rem;
       font: 1rem/1.5 system-ui, sans-serif;
     }
-    ul { padding-left: 1.5rem; }
+    ul, ol { padding-left: 1.5rem; }
     li { margin-bottom: 1rem; overflow-wrap: anywhere; }
     li small { display: block; }
+    section + section { margin-top: 2.5rem; }
+    label { display: block; font-weight: 600; }
+    textarea, input, button { font: inherit; padding: .4rem; }
+    textarea { box-sizing: border-box; width: 100%; }
+    input[type="number"] { width: 5rem; }
+    .formular-zeile { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+    pre, .quellentext { white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre { border: 1px solid GrayText; padding: .75rem; }
   </style>
 </head>
 <body>
@@ -24,14 +32,124 @@
   </header>
 
   <main>
-    <h2>Letzte RAG-Läufe</h2>
-    <p>Die Links öffnen den jeweiligen Lauf als JSON.</p>
-    <p id="status" role="status">Laufhistorie wird geladen …</p>
-    <ul id="laufhistorie"></ul>
-    <noscript>Aktiviere JavaScript, um die Laufhistorie anzuzeigen.</noscript>
+    <section aria-labelledby="vorschau-titel">
+      <h2 id="vorschau-titel">Dokufrage als Vorschau</h2>
+      <p>Die Vorschau zeigt Fundstellen und Prompt, ohne GPT oder Gemini aufzurufen.</p>
+
+      <form id="vorschau-formular">
+        <label for="frage">Frage</label>
+        <textarea id="frage" rows="3" required></textarea>
+        <div class="formular-zeile">
+          <div>
+            <label for="top-k">Trefferzahl</label>
+            <input id="top-k" type="number" min="1" max="20" value="3" required>
+          </div>
+          <button id="vorschau-knopf" type="submit" disabled>Vorschau laden</button>
+        </div>
+      </form>
+
+      <p id="vorschau-status" role="status"></p>
+      <div id="vorschau-ergebnis" hidden>
+        <h3>Fundstellen</h3>
+        <p id="vorschau-frage"></p>
+        <ol id="vorschau-fundstellen"></ol>
+        <details>
+          <summary>Prompt anzeigen</summary>
+          <pre id="vorschau-prompt"></pre>
+        </details>
+      </div>
+    </section>
+
+    <section aria-labelledby="historie-titel">
+      <h2 id="historie-titel">Letzte RAG-Läufe</h2>
+      <p>Die Links öffnen den jeweiligen Lauf als JSON.</p>
+      <p id="status" role="status">Laufhistorie wird geladen …</p>
+      <ul id="laufhistorie"></ul>
+    </section>
+
+    <noscript>Aktiviere JavaScript für die Vorschau und die Laufhistorie.</noscript>
   </main>
 
   <script>
+    const formular = document.querySelector("#vorschau-formular");
+    const frageFeld = document.querySelector("#frage");
+    const trefferFeld = document.querySelector("#top-k");
+    const vorschauKnopf = document.querySelector("#vorschau-knopf");
+    const vorschauStatus = document.querySelector("#vorschau-status");
+    const vorschauErgebnis = document.querySelector("#vorschau-ergebnis");
+    const vorschauFrage = document.querySelector("#vorschau-frage");
+    const vorschauFundstellen = document.querySelector("#vorschau-fundstellen");
+    const vorschauPrompt = document.querySelector("#vorschau-prompt");
+
+    function zeigeVorschau(daten) {
+      vorschauFrage.textContent = daten.frage;
+      vorschauFundstellen.replaceChildren();
+
+      for (const fundstelle of daten.fundstellen) {
+        const eintrag = document.createElement("li");
+        const titel = document.createElement("strong");
+        titel.textContent = `${fundstelle.datei}:${fundstelle.startzeile}-${fundstelle.endzeile}`;
+
+        // Ausschnitt und Prompt sind Textdaten und werden als solche eingesetzt.
+        const ausschnitt = document.createElement("p");
+        ausschnitt.className = "quellentext";
+        ausschnitt.textContent = fundstelle.text;
+        eintrag.append(titel, ausschnitt);
+        vorschauFundstellen.append(eintrag);
+      }
+
+      vorschauPrompt.textContent = daten.prompt ?? "";
+      vorschauErgebnis.hidden = false;
+    }
+
+    async function ladeVorschau(ereignis) {
+      // JavaScript übernimmt das Absenden, damit die Seite sich nicht neu lädt.
+      ereignis.preventDefault();
+      if (vorschauKnopf.disabled) return;
+
+      vorschauErgebnis.hidden = true;
+      const frage = frageFeld.value.trim();
+      if (!frage) {
+        vorschauStatus.textContent = "Gib bitte eine Frage ein.";
+        frageFeld.focus();
+        return;
+      }
+
+      vorschauKnopf.disabled = true;
+      vorschauStatus.textContent = "Fundstellen werden gesucht …";
+      try {
+        // valueAsNumber liefert eine Zahl. Die API erwartet für top_k JSON ohne Anführungszeichen.
+        const antwort = await fetch("/rag/vorschau", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ frage, top_k: trefferFeld.valueAsNumber }),
+        });
+
+        if (!antwort.ok) {
+          const fehler = await antwort.json().catch(() => null);
+          vorschauStatus.textContent = typeof fehler?.detail === "string"
+            ? fehler.detail
+            : `Die Vorschau konnte nicht geladen werden (HTTP ${antwort.status}).`;
+          return;
+        }
+
+        const daten = await antwort.json();
+        if (daten.fundstellen.length === 0) {
+          vorschauStatus.textContent = "Keine Fundstellen gefunden.";
+          return;
+        }
+
+        zeigeVorschau(daten);
+        vorschauStatus.textContent = `Gefundene Abschnitte: ${daten.fundstellen.length}`;
+      } catch (fehler) {
+        vorschauStatus.textContent = "Die Vorschau konnte nicht geladen werden.";
+        console.error(fehler);
+      } finally {
+        // Der Knopf wird auch nach einem Fehler wieder bedienbar.
+        vorschauKnopf.disabled = false;
+      }
+    }
+
     const statusAnzeige = document.querySelector("#status");
     const liste = document.querySelector("#laufhistorie");
 
@@ -75,6 +193,8 @@
       }
     }
 
+    formular.addEventListener("submit", ladeVorschau);
+    vorschauKnopf.disabled = false;
     ladeLaufhistorie();
   </script>
 </body>
