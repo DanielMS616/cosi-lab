@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cosi-Lab · Laufhistorie</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      max-width: 44rem;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      font: 1rem/1.5 system-ui, sans-serif;
+    }
+    ul { padding-left: 1.5rem; }
+    li { margin-bottom: 1rem; overflow-wrap: anywhere; }
+    li small { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Cosi-Lab</h1>
+    <a href="/docs">API-Dokumentation</a>
+  </header>
+
+  <main>
+    <h2>Letzte RAG-Läufe</h2>
+    <p>Die Links öffnen den jeweiligen Lauf als JSON.</p>
+    <p id="status" role="status">Laufhistorie wird geladen …</p>
+    <ul id="laufhistorie"></ul>
+    <noscript>Aktiviere JavaScript, um die Laufhistorie anzuzeigen.</noscript>
+  </main>
+
+  <script>
+    const statusAnzeige = document.querySelector("#status");
+    const liste = document.querySelector("#laufhistorie");
+
+    function zeigeLauf(lauf) {
+      const eintrag = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = `/rag/laeufe/${encodeURIComponent(lauf.id)}`;
+
+      // Gespeicherte Fragen als Text einsetzen, damit der Browser sie nicht
+      // als HTML interpretiert.
+      link.textContent = `#${lauf.id} · ${lauf.question}`;
+
+      const details = document.createElement("small");
+      const zeit = new Date(lauf.requested_at_utc).toLocaleString("de-DE");
+      details.textContent = `${lauf.provider} · ${lauf.model} · ${zeit}`;
+
+      eintrag.append(link, details);
+      liste.append(eintrag);
+    }
+
+    async function ladeLaufhistorie() {
+      try {
+        // Die relative URL verwendet denselben Server wie die Startseite.
+        // Dadurch funktioniert sie auf dem Mac und auch über den SSH-Tunnel.
+        const antwort = await fetch("/rag/laeufe?limit=10");
+        if (!antwort.ok) {
+          throw new Error(`HTTP ${antwort.status}`);
+        }
+
+        const daten = await antwort.json();
+        for (const lauf of daten.laeufe) {
+          zeigeLauf(lauf);
+        }
+
+        statusAnzeige.textContent = daten.laeufe.length === 0
+          ? "Noch keine RAG-Läufe gespeichert."
+          : "";
+      } catch (fehler) {
+        statusAnzeige.textContent = "Die Laufhistorie konnte nicht geladen werden.";
+        console.error(fehler);
+      }
+    }
+
+    ladeLaufhistorie();
+  </script>
+</body>
+</html>

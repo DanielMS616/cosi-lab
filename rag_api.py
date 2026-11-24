@@ -1,10 +1,12 @@
 """Lokaler HTTP-Zugang zu RAG-Vorschau, Antworten und gespeicherten Läufen."""
 
 import sqlite3
+import pathlib
 from json import JSONDecodeError
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from modell_fehler import (
@@ -22,6 +24,14 @@ app = FastAPI(title="Cosi-Lab RAG-API")
 
 # Die Lauf-ID ist in SQLite eine vorzeichenbehaftete 64-Bit-Ganzzahl.
 GROESSTE_LAUF_ID = 2**63 - 1
+
+
+@app.get("/", response_class=FileResponse, include_in_schema=False)
+def zeige_startseite():
+    """Liefert die lokale Startseite für den Browser aus."""
+    # Suche die HTML-Datei neben dem Python-Modul, unabhängig vom Startordner.
+    html_datei = pathlib.Path(__file__).resolve().parent / "web" / "index.html"
+    return FileResponse(html_datei, media_type="text/html")
 
 
 @app.get("/rag/laeufe")
