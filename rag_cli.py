@@ -3,10 +3,9 @@
 import argparse
 
 from rag_prompt import baue_prompt
-from rag_zitate import pruefe_zitate
 from rag_embeddings import E5_MODELL
 from rag_suche import suche_fuer_frage
-from rag_antwort import rufe_antwortmodell_auf
+from rag_ablauf import beantworte_und_speichere
 
 
 def main():
@@ -81,27 +80,26 @@ def main():
             print(prompt)
 
         if mit_antwort:
-            from rag_run_storage import RUN_DATABASE, save_rag_run
-
-            # Die CLI wählt den Anbieter und übergibt den fertigen Prompt.
+            # Der Antwortablauf prüft und speichert. Die CLI zeigt das Ergebnis an.
             anbieter = "GPT" if args.gpt else "Gemini"
-            token_limit = 240
-            ergebnis = rufe_antwortmodell_auf(
-                prompt, anbieter.lower(), max_output_tokens=token_limit
+            ergebnis, zitatpruefung, lauf_id = beantworte_und_speichere(
+                frage,
+                prompt,
+                sichtbare_treffer,
+                anbieter=anbieter.lower(),
+                top_k=args.top_k,
+                suchmodell=E5_MODELL,
+                e5_load_ms=e5_load_ms,
+                retrieval_ms=retrieval_ms,
             )
+
             print(f"\n{anbieter}-Antwort:")
             print(ergebnis["text"])
 
-            # Vergleiche die Zitate in der Antwort mit genau den Absätzen,
-            # die das Modell im Prompt gesehen hat.
-            zitatpruefung = pruefe_zitate(ergebnis["text"], sichtbare_treffer)
-            unbekannte_zitate = zitatpruefung["unbekannt"]
-
-            # Python betritt diesen Block nur, wenn die Liste Einträge enthält.
-            # Bei einer Antwort ohne Zitat bleibt die Liste ebenfalls leer.
-            if unbekannte_zitate:
+            # Warne nur bei Zitaten, die nicht zu einer übergebenen Fundstelle passen.
+            if zitatpruefung["unbekannt"]:
                 print("\nZitatwarnung: Diese Fundstellen standen nicht im Prompt:")
-                for zitat in unbekannte_zitate:
+                for zitat in zitatpruefung["unbekannt"]:
                     print(f"- {zitat}")
 
             # Nur der vorhandene GPT-Adapter liefert diese Statusfelder.
@@ -110,28 +108,6 @@ def main():
                 if ergebnis["incomplete_reason"]:
                     print(f"Grund: {ergebnis['incomplete_reason']}")
 
-            # Speichere dieselbe Frage, denselben Prompt und dieselben Quellen,
-            # die verwendet wurden. Nicht gemeldete Werte bleiben in SQLite NULL.
-            lauf = {
-                "requested_at_utc": ergebnis["requested_at_utc"],
-                "question": frage,
-                "top_k": args.top_k,
-                "retrieval_model": E5_MODELL,
-                "provider": anbieter.lower(),
-                "model": ergebnis["model"],
-                "max_output_tokens": token_limit,
-                "prompt": prompt,
-                "response_text": ergebnis["text"],
-                "input_tokens": ergebnis.get("input_tokens"),
-                "output_tokens": ergebnis.get("output_tokens"),
-                "e5_load_ms": e5_load_ms,
-                "retrieval_ms": retrieval_ms,
-                "client_duration_ms": ergebnis["client_duration_ms"],
-                "provider_duration_ms": ergebnis.get("processing_ms"),
-                "api_status": ergebnis.get("status"),
-                "incomplete_reason": ergebnis.get("incomplete_reason"),
-            }
-            lauf_id = save_rag_run(RUN_DATABASE, lauf, sichtbare_treffer)
             print(f"RAG-Lauf gespeichert: ID {lauf_id}")
 
 
