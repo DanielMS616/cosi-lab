@@ -2,7 +2,7 @@
 
 Cosi-Lab ist ein Python-Lernprojekt mit zwei Anwendungen im Terminal. Die **Temperaturauswertung** zählt Messwerte aus CSV-Dateien und kann daraus einen Modellbericht erstellen. Die **Dokusuche** beantwortet Fragen zu lokalen Markdown-Dateien mit E5, PostgreSQL und wahlweise GPT oder Gemini. Beide Anwendungen können Modellläufe lokal in SQLite speichern und später anhand ihrer ID wieder anzeigen.
 
-**Stand: 20.11.2026 · Branch `rag-e5-neustart`.** Die aktuelle Dokusuche läuft über `rag_cli.py`. Der Neustart ist im [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) beschrieben; dort ist auch der Wechsel des Arbeitsordners auf dem Mac und auf Cosi-Lab festgehalten. Die Doku zur früheren Wortsuche, Weboberfläche und API bleibt in den älteren [Journaleinträgen](docs/journal/) nachvollziehbar.
+**Stand: 24.11.2026 · Branch `rag-e5-neustart`.** Die aktuelle Dokusuche läuft über `rag_cli.py`. Der Neustart ist im [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) beschrieben; dort ist auch der Wechsel des Arbeitsordners auf dem Mac und auf Cosi-Lab festgehalten. Die Doku zur früheren Wortsuche, Weboberfläche und API bleibt in den älteren [Journaleinträgen](docs/journal/) nachvollziehbar.
 
 ## Datenfluss
 
@@ -16,12 +16,16 @@ flowchart TB
     E5 --> SEARCH["pgvector: beste Fundstellen"]
     PG --> SEARCH
     SEARCH --> PROMPT["Prompt aus Frage und Ausschnitten"]
-    PROMPT -->|Vorschau| VIEW["Terminalausgabe"]
+    PROMPT -->|Vorschau| VIEW["Prompt anzeigen"]
     PROMPT -->|Antwort angefordert| MODEL["GPT oder Gemini"]
-    MODEL -->|Antwort und Metadaten| SAVE["CLI speichert Prompt, Quellen und Antwort"]
+    MODEL --> CHECK["Zitate mit Fundstellen abgleichen"]
+    CHECK --> SAVE["Lauf mit Prompt, Quellen und Antwort speichern"]
     SAVE --> RUN[("SQLite: rag_runs")]
+    SAVE --> CLI["Antwort, mögliche Warnung und Lauf-ID anzeigen"]
     RUN --> REPLAY["Lauf anhand seiner ID ansehen"]
 ```
+
+Die CLI liest die Frage, stößt die Suche an und zeigt die Ergebnisse an. `rag_suche.py` berechnet den Fragevektor und holt die Treffer aus PostgreSQL. `rag_prompt.py` baut aus Frage und Fundstellen den Prompt. Wenn eine Modellantwort angefordert ist, verbindet `rag_ablauf.py` den Modellaufruf, die Zitatprüfung und die Speicherung. Der Antwortablauf liefert Antwort, Prüfergebnis und Lauf-ID an die CLI zurück.
 
 Die **Temperaturauswertung** nimmt einen anderen Weg: CSV → Kennzahlen → optionaler GPT- oder Gemini-Bericht → SQLite-Tabelle `model_runs`. Der Bericht lässt sich anschließend als Textdatei exportieren. Die Temperaturauswertung braucht kein PostgreSQL.
 
@@ -141,7 +145,7 @@ E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortier
 | `--top-k ANZAHL` | Begrenzt die SQL-Abfrage und damit die angezeigten und für den Prompt verwendeten Absätze. Ohne Schalter gibt die Suche alle Absätze zurück. |
 | `--show-text` | Zeigt zusätzlich den Originaltext des besten Treffers. |
 | `--show-prompt` | Zeigt den Prompt mit Frage und ausgewählten Ausschnitten. Zusammen mit einem Anbieterschalter ist es derselbe Prompt, der gesendet wird. |
-| `--gpt` / `--gemini` | Sendet den Prompt an einen Anbieter, zeigt die Antwort und speichert den Lauf. Die beiden Schalter schließen sich gegenseitig aus. |
+| `--gpt` / `--gemini` | Sendet den Prompt an einen Anbieter, speichert den Lauf und zeigt Antwort sowie Lauf-ID an. Die beiden Schalter schließen sich gegenseitig aus. |
 
 ```bash
 .venv/bin/python rag_cli.py \
@@ -152,6 +156,10 @@ E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortier
 ```
 
 Die Anbieter erhalten bei gleichen Suchergebnissen denselben Kontext. GPT nutzt `gpt-4o-mini`, Gemini `gemini-3.5-flash-lite`. Das Limit beträgt bei Dokufragen 240 Ausgabetoken, bei Temperaturberichten standardmäßig 120. Der RAG-Prompt fordert bei belegten Aussagen eine genaue Fundstelle und bei fehlenden Angaben `Nicht belegt:`. Ein Satz wie „Das Sollmaß steht in einer separaten Zeichnung“ belegt nur den Verweis, nicht die gesuchte Breite.
+
+### Zitate prüfen
+
+Die Zitatprüfung gleicht erkannte Zitate mit den Fundstellen aus dem Prompt ab. Pfad und Zeilenbereich müssen genau übereinstimmen: Steht `examples/rag/masspruefung-h12.md:6-7` im Prompt, ist ein Zitat derselben Datei mit `6-8` unbekannt. Die CLI zeigt dafür eine Warnung an; der Lauf wird trotzdem gespeichert. Eine Antwort ohne Zitat löst keine Warnung aus. Ob der zitierte Absatz die Aussage tatsächlich belegt, prüft diese Funktion nicht.
 
 ### Laufhistorie und Messwerte
 
@@ -166,7 +174,7 @@ sqlite3 -readonly -header -column -nullvalue 'nicht erfasst' data/model_runs.sql
    FROM rag_runs ORDER BY id DESC LIMIT 2;'
 ```
 
-Ersetze `1` durch die ausgegebene **RAG-Lauf-ID**. Die Ansicht zeigt den damaligen Prompt, die Antwort, die Fundstellen samt Originaltext und ihre Ähnlichkeitswerte. Sie liest die SQLite-Datei schreibgeschützt; dafür müssen weder PostgreSQL noch E5 oder das Antwortmodell laufen. Mit `--database PFAD` lässt sich eine andere SQLite-Datei öffnen. RAG- und Temperatur-IDs gehören zu unterschiedlichen Tabellen; dieselbe Zahl kann daher für zwei verschiedene Läufe stehen.
+Ersetze `1` durch die ausgegebene **RAG-Lauf-ID**. Die Ansicht zeigt den damaligen Prompt, die Antwort, die Fundstellen samt Originaltext und ihre Ähnlichkeitswerte. Sie prüft die Zitate erneut gegen die gespeicherten Fundstellen des Laufs. Sie liest die SQLite-Datei schreibgeschützt; dafür müssen weder PostgreSQL noch E5 oder das Antwortmodell laufen. Mit `--database PFAD` lässt sich eine andere SQLite-Datei öffnen. RAG- und Temperatur-IDs gehören zu unterschiedlichen Tabellen; dieselbe Zahl kann daher für zwei verschiedene Läufe stehen.
 
 | Feld | Bedeutung |
 | --- | --- |
@@ -186,9 +194,9 @@ Fehlende Werte bleiben in SQLite `NULL` und erscheinen in der Laufansicht als �
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Die automatisierte Offline-Suite enthält sechs Temperaturtests für SQLite-Speicherung, Laufansicht und Berichtsexport. Sie braucht keine API-Schlüssel. Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, welche Belege die Suche findet und ob das Antwortmodell sie richtig verwendet.
+Die automatisierte Testreihe enthält **zehn Tests**: sechs für die Temperaturauswertung, drei für die Zitatprüfung und einen für den RAG-Antwortablauf. Der Integrationstest simuliert die Modellantwort. Er prüft ein unbekanntes Zitat und liest den gespeicherten Prompt, die Antwort und die Fundstellen aus einer temporären SQLite-Datei zurück. Die Tests brauchen keine API-Schlüssel, kein geladenes E5-Modell und keine laufende PostgreSQL-Instanz.
 
-Am 20.11.2026 wurden sieben RAG-Fragen mit `--top-k 3` auf dem Mac ausgewertet, einschließlich zweier bereits gespeicherter H-12-Läufe. Für alle sechs Fragen mit erwarteten Belegen lagen die nötigen Absätze unter den ersten drei Treffern. GPT bestand sieben Fälle, Gemini sechs. Bei der Frage nach einer Bibliotheksöffnungszeit gab Gemini keine Uhrzeit an, nannte aber irrelevante Fundstellen. Ein angegebener Zeilenbereich stand so nicht im Prompt. Die Prüfreihe hält die Lauf-IDs fest; sie ist kein allgemeiner Modellvergleich. Ein automatischer Abgleich der Zitate mit den übergebenen Fundstellen ist der nächste geplante Schritt.
+Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, welche Belege die Suche findet und ob das Antwortmodell sie richtig verwendet. Am 20.11.2026 wurden sieben RAG-Fragen mit `--top-k 3` auf dem Mac ausgewertet, einschließlich zweier bereits gespeicherter H-12-Läufe. Für alle sechs Fragen mit erwarteten Belegen lagen die nötigen Absätze unter den ersten drei Treffern. GPT bestand sieben Fälle, Gemini sechs. Bei der Frage nach einer Bibliotheksöffnungszeit gab Gemini keine Uhrzeit an, nannte aber irrelevante Fundstellen. Ein angegebener Zeilenbereich stand so nicht im Prompt. Die Prüfreihe hält die Lauf-IDs fest; sie ist kein allgemeiner Modellvergleich.
 
 Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/aufbau-fernzugriff.md) beschrieben an. Verwende dort den zum Branch gehörenden Arbeitsordner (dokumentiert als `~/cosi-lab-e5-neustart`). Richte die virtuelle Umgebung und `.env` auf diesem Rechner ein, starte den lokalen PostgreSQL-Dienst und importiere die Beispiele wie oben. Die SQLite-Historie liegt auf dem Rechner, auf dem die CLI ausgeführt wurde. Eine auf dem Mac erzeugte Lauf-ID ist daher auf Cosi-Lab nicht automatisch vorhanden.
 
@@ -198,9 +206,15 @@ Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/a
 
 | Datei | Aufgabe |
 | --- | --- |
-| [`rag_cli.py`](rag_cli.py) | Dokufragen stellen, E5-Fragevektor berechnen, Fundstellen und Prompt anzeigen, optional eine Modellantwort anfordern und speichern. |
+| [`rag_cli.py`](rag_cli.py) | Terminalargumente lesen, Suche und Antwortablauf anstoßen und Ergebnisse anzeigen. |
 | [`rag_import.py`](rag_import.py) | Markdown-Absätze kodieren und den PostgreSQL-Suchbestand neu befüllen. |
+| [`rag_embeddings.py`](rag_embeddings.py) | E5-Modell für Import und Suche bereitstellen. |
+| [`rag_suche.py`](rag_suche.py) | Fragevektor berechnen, Fundstellen aus PostgreSQL holen und Laufzeiten messen. |
 | [`rag_db.py`](rag_db.py) | PostgreSQL-Verbindung und sortierte pgvector-Abfrage. |
+| [`rag_prompt.py`](rag_prompt.py) | Prompt aus Frage und ausgewählten Fundstellen bauen. |
+| [`rag_ablauf.py`](rag_ablauf.py) | Modellaufruf, Zitatprüfung und SQLite-Speicherung verbinden. |
+| [`rag_antwort.py`](rag_antwort.py) | Anbieteradapter aufrufen und die Antwort um Aufrufdaten ergänzen. |
+| [`rag_zitate.py`](rag_zitate.py) | Erkannte Zitate mit den Fundstellen aus dem Prompt abgleichen. |
 | [`rag_run_storage.py`](rag_run_storage.py) | RAG-Läufe und ihre Quellenausschnitte in SQLite speichern und schreibgeschützt lesen. |
 | [`show_rag_run.py`](show_rag_run.py) | Details zu einer gespeicherten RAG-Lauf-ID anzeigen. |
 | [`temperature_cli.py`](temperature_cli.py) | CSV-Auswertung, Kennzahlen und optionalen Modellbericht verbinden. |
@@ -223,6 +237,7 @@ Für einen Lauf **auf Cosi-Lab** melde dich wie in der [Fernzugriffsdoku](docs/a
 | [`examples/eval_threshold_equal.csv`](examples/eval_threshold_equal.csv), [`examples/eval_mostly_missing.csv`](examples/eval_mostly_missing.csv), [`examples/eval_negative_temperatures.csv`](examples/eval_negative_temperatures.csv) | Vergleichsfälle für Schwellenwert, fehlende Werte und negative Temperaturen. |
 | [Fräse F-07](examples/rag/fraese-f07.md), [Maßprüfung H-12](examples/rag/masspruefung-h12.md), [Verstärkerrack „Nachtflug“](examples/rag/nachtflug-rack.md) | Der derzeitige Dokumentbestand der RAG-Suche. |
 | [`tests/test_temperature_storage.py`](tests/test_temperature_storage.py), [`tests/test_temperature_report_export.py`](tests/test_temperature_report_export.py) | Automatisierte Temperaturtests für SQLite-Läufe und Export. |
+| [`tests/test_rag_zitate.py`](tests/test_rag_zitate.py), [`tests/test_rag_ablauf.py`](tests/test_rag_ablauf.py) | Tests für die Zitatprüfung und das Zusammenspiel von Antwortablauf und SQLite. |
 | [`docs/versuche/rag-pruefreihe.md`](docs/versuche/rag-pruefreihe.md) | Sieben Fragen samt Sollantworten, erwarteten Fundstellen, Ergebnissen und Lauf-IDs. |
 | [`docs/anleitung-berichtsexport.md`](docs/anleitung-berichtsexport.md) | Kurzanleitung zum Export eines Temperaturberichts. |
 | [Hardwareaufbau](docs/aufbau-hardware.md), [Fernzugriff](docs/aufbau-fernzugriff.md) | Dokumentation zum Rechner und zu den geprüften Verbindungswegen. |
