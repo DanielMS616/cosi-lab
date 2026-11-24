@@ -1,12 +1,13 @@
-"""Lokaler HTTP-Zugang zu gespeicherten RAG-Läufen."""
+"""Lokaler HTTP-Zugang zu RAG-Vorschau, Antworten und gespeicherten Läufen."""
 
 import sqlite3
-
 from json import JSONDecodeError
-from typing import Annotated
-from pydantic import BaseModel, Field
-from fastapi import FastAPI, HTTPException, Path
+from typing import Annotated, Literal
 
+from fastapi import FastAPI, HTTPException, Path
+from pydantic import BaseModel, Field
+
+from rag_ablauf import beantworte_und_speichere
 from rag_prompt import baue_prompt
 from rag_run_storage import RUN_DATABASE, load_rag_run
 
@@ -14,8 +15,6 @@ from rag_run_storage import RUN_DATABASE, load_rag_run
 app = FastAPI(title="Cosi-Lab RAG-API")
 
 # Die Lauf-ID ist in SQLite eine vorzeichenbehaftete 64-Bit-Ganzzahl.
-# GROESSTE_LAUF_ID = 2**63 - 1 ist die größte Lauf-ID,
-# die SQLite als INTEGER PRIMARY KEY speichern kann: 9_223_372_036_854_775_807
 GROESSTE_LAUF_ID = 2**63 - 1
 
 
@@ -51,9 +50,14 @@ class VorschauAnfrage(BaseModel):
     top_k: int = Field(default=3, ge=1, le=20, strict=True)
 
 
-@app.post("/rag/vorschau")
-def erstelle_vorschau(anfrage: VorschauAnfrage):
-    """Sucht Fundstellen und baut daraus den Prompt für die Vorschau."""
+class AntwortAnfrage(VorschauAnfrage):
+    """Ergänzt Frage und Trefferzahl um die Wahl des Anbieters."""
+
+    anbieter: Literal["gpt", "gemini"]
+
+
+def bereite_rag_anfrage_vor(anfrage):
+    """Bereitet Fundstellen und Prompt für beide POST-Endpunkte vor."""
     # Leerzeichen am Rand entfernen. Eine leere Frage soll keine Suche auslösen.
     frage = anfrage.frage.strip()
     if not frage:
@@ -66,8 +70,8 @@ def erstelle_vorschau(anfrage: VorschauAnfrage):
     from rag_suche import suche_fuer_frage
 
     try:
-        # Dieselbe Suche wie in der CLI. Für die Vorschau genügen die Fundstellen.
-        fundstellen, _, _ = suche_fuer_frage(frage, anfrage.top_k)
+        # Die Antwort braucht zusätzlich die beiden Messwerte für die Laufhistorie.
+        fundstellen, e5_load_ms, retrieval_ms = suche_fuer_frage(frage, anfrage.top_k)
     except SystemExit as fehler:
         # Die bisherige Suche beendet die CLI, wenn das Datenbankpasswort fehlt.
         # Hier melden wir den Fehler per HTTP, damit der Server weiterläuft.
@@ -76,15 +80,67 @@ def erstelle_vorschau(anfrage: VorschauAnfrage):
         ) from fehler
     except (OperationalError, UndefinedTable) as fehler:
         raise HTTPException(
-            status_code=503,
-            detail="Prüfe PostgreSQL und führe bei Bedarf rag_import.py aus.",
+            status_code=503, detail="Prüfe PostgreSQL und führe bei Bedarf rag_import.py aus."
         ) from fehler
 
     # Ein leerer Suchbestand liefert keine Fundstellen und deshalb keinen Prompt.
     prompt = baue_prompt(frage, fundstellen) if fundstellen else None
-    return {
+    vorschau = {
         "frage": frage,
         "top_k": anfrage.top_k,
         "fundstellen": fundstellen,
         "prompt": prompt,
     }
+    return vorschau, e5_load_ms, retrieval_ms
+
+
+@app.post("/rag/vorschau")
+def erstelle_vorschau(anfrage: VorschauAnfrage):
+    """Zeigt Fundstellen und Prompt, ohne ein Antwortmodell aufzurufen."""
+    vorschau, _, _ = bereite_rag_anfrage_vor(anfrage)
+    return vorschau
+
+
+@app.post("/rag/antwort")
+def erstelle_antwort(anfrage: AntwortAnfrage):
+    """Beantwortet eine Frage anhand der Fundstellen und speichert den Lauf."""
+    vorschau, e5_load_ms, retrieval_ms = bereite_rag_anfrage_vor(anfrage)
+
+    # Übernimm die Vorschau und ergänze die Felder für die Modellantwort.
+    # None wird im JSON als null ausgegeben.
+    antwortdaten = {
+        **vorschau,
+        "anbieter": anfrage.anbieter,
+        "modell": None,
+        "antwort": None,
+        "zitatpruefung": None,
+        "lauf_id": None,
+    }
+    if not vorschau["fundstellen"]:
+        # Ohne Fundstellen gibt es keinen Modellaufruf und keinen neuen Lauf.
+        return antwortdaten
+
+    # Auch der GET-Endpunkt soll ohne gestartete E5-Suche nutzbar bleiben.
+    from rag_embeddings import E5_MODELL
+
+    # Dieselbe Funktion wie in der CLI: aufrufen, Zitate prüfen, speichern.
+    ergebnis, zitatpruefung, lauf_id = beantworte_und_speichere(
+        vorschau["frage"],
+        vorschau["prompt"],
+        vorschau["fundstellen"],
+        anbieter=anfrage.anbieter,
+        top_k=anfrage.top_k,
+        suchmodell=E5_MODELL,
+        e5_load_ms=e5_load_ms,
+        retrieval_ms=retrieval_ms,
+        database_path=RUN_DATABASE,
+    )
+
+    # Fülle die Antwortfelder mit den Ergebnissen des gespeicherten Laufs.
+    antwortdaten.update(
+        modell=ergebnis["model"],
+        antwort=ergebnis["text"],
+        zitatpruefung=zitatpruefung,
+        lauf_id=lauf_id,
+    )
+    return antwortdaten
