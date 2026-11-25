@@ -13,4 +13,13 @@ Beim Test notieren wir Belegränge, Lauf-ID und Antwortbefund getrennt.
 
 ## Protokoll
 
-Noch keine Läufe durchgeführt.
+### 25.11.2026 – Cosi-Lab, Browser
+
+**Modell:** `gemini-3.5-flash-lite` · **Top-k:** 3
+
+| Fall | Rang der erwarteten Belege | Lauf-ID | Antwortbefund |
+| --- | --- | --- | --- |
+| W01 | Wartungsanweisung: 1 | 25 | Bestanden: 120 Betriebsstunden für P-17 am Prüfstand West, korrekt belegt. |
+| W02 | Störungsprotokoll: 1 | 26 | Bestanden: Kunststoffspäne im Ansaugsieb und 15 l/min nach der Reinigung, beides belegt. |
+| W03 | Teileliste: 3; Wartungsanweisung: 2 | 27 | Teilweise bestanden: 120 Betriebsstunden korrekt belegt; S-217 trotz direktem Beleg als unbelegt markiert. |
+| W04 | Teileliste: 1; kein Preisbeleg erwartet | 28 | Bestanden: Preis bleibt offen; S-217 korrekt belegt. |
