@@ -14,6 +14,8 @@ sich sowohl Platz 1 als auch die ersten drei Treffer vergleichen.
 | P05 · Fehlende Angabe mit Hinweis | Wie breit soll die Halterung H-12 sein? | `examples/rag/masspruefung-h12.md:6-7` belegt nur den Verweis auf die Zeichnung. | Die konkrete Sollbreite ist nicht belegt. Die Antwort nennt keine Zahl und verweist mit Fundstelle auf die separate Zeichnung. |
 | P06 · Außerhalb des Bestands | Wann öffnet die Bibliothek am Sonntag? | Kein Beleg im Dokumentbestand. | Die Öffnungszeit ist nicht belegt. Keine erfundene Uhrzeit und kein Verweis auf eine irrelevante Fundstelle. |
 | P07 · Geltungsbereich einer Regel | Gilt die 60-°C-Regel vom Spindellager auch für das Kühlmittel der Fräse im Stillstand? | `examples/rag/fraese-f07.md:10-12` | Die Regel für das Spindellager im Dauerlauf gilt nicht für den Kühlmittelwert im Stillstand. Kein eigener Grenzwert für das Kühlmittel wird behauptet. |
+| P08 · Belegter und unbelegter Teil | Welche Drehzahl hat die Spindel der Fräse F-07 im Dauerlauf, und zählen genau 60 °C dabei als Überschreitung? | Keine Angabe zur Drehzahl; `examples/rag/fraese-f07.md:3-5` für die Temperaturregel. | Fehlende Drehzahl kurz benennen. Danach mit Fundstelle erklären, dass genau 60 °C nicht als Überschreitung zählen. |
+
 
 ## So prüfen wir
 
@@ -53,7 +55,6 @@ Läufe mit derselben Frage, denselben Ausschnitten und `--top-k 3` übernommen.
 | P05 | Zeichnungshinweis: 1 | 1 · bestanden | 2 · bestanden | Beide benennen die fehlende Sollbreite und verweisen mit der passenden Fundstelle auf die Zeichnung. |
 | P06 | Kein Beleg; drei themenfremde Treffer | 4 · bestanden | 6 · teilweise: keine Uhrzeit, aber unbelegte Fundstellen | Die Ausschnitte enthalten keinen Hinweis auf Öffnungszeiten. Gemini nennt zusätzlich `nachtflug-rack.md:6-10`, obwohl dieser zusammenhängende Bereich nicht im Prompt stand. |
 | P07 | Kühlmittel: 1 | 13 · bestanden | 14 · bestanden | Beide grenzen den Kühlmittelwert im Stillstand vom Spindellager im Dauerlauf ab und nennen keinen unbelegten Grenzwert. |
-| P08 · Belegter und unbelegter Teil | Welche Drehzahl hat die Spindel der Fräse F-07 im Dauerlauf, und zählen genau 60 °C dabei als Überschreitung? | Keine Angabe zur Drehzahl; `examples/rag/fraese-f07.md:3-5` für die Temperaturregel. | Fehlende Drehzahl kurz benennen. Danach mit Fundstelle erklären, dass genau 60 °C nicht als Überschreitung zählen. |
 
 Bei allen sechs Fällen mit erwartetem Beleg standen sämtliche benötigten
 Fundstellen unter den ersten drei Treffern. Für P06 gab es wie erwartet keinen
@@ -98,6 +99,15 @@ ihre Reihenfolge vor und nach der Promptänderung gleich.
 | P05 | Gemini #19: Fehlende Breite kurz benannt, aber Zitat in der „Nicht belegt“-Zeile und kein Zeichnungshinweis. | Gemini #21: bestanden. Fehlende Breite kurz benannt; Zeichnung separat und korrekt belegt. |
 | P08 | Gemini #20: bestanden. Drehzahl kurz als unbelegt benannt; Temperaturregel korrekt zitiert. | Gemini #22: bestanden. Beide Teilantworten bleiben korrekt, auch mit wiederhergestellter Hinweisregel. |
 
+
+### Abschlusscheck mit dem aktuellen Prompt
+
+Cosi-Lab, Browser, Top-k: 3.
+
+| Fall | Lauf | Befund |
+| --- | --- | --- |
+| P04 | Gemini #23 | Bestanden: Fräse und Rack in der Reihenfolge der Frage beantwortet und einzeln belegt. |
+| P08 | GPT #24 | Fachlich bestanden: Drehzahl bleibt offen; Temperaturregel korrekt belegt. Die fehlende Drehzahl wird vor der „Nicht belegt“-Zeile zusätzlich erwähnt. |
 
 ---
 
