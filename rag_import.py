@@ -5,7 +5,7 @@ from pathlib import Path
 from pgvector import Vector
 from pgvector.psycopg import register_vector
 
-from rag_db import verbinde_rag_db
+from rag_db import lade_rag_bestand, verbinde_rag_db
 from rag_embeddings import lade_e5_modell
 
 
@@ -44,7 +44,11 @@ def lese_absaetze(datei):
 def lade_abschnitte():
     """Liest dieselben Absätze wie die bisherige CLI."""
     abschnitte = []
-    ordner = PROJEKTORDNER / "examples" / "rag"
+
+    # Der Ordner gehört zu derselben Auswahl, die auch die Verbindung nutzt.
+    dokumentordner, _ = lade_rag_bestand()
+    ordner = PROJEKTORDNER / dokumentordner
+
     for datei in sorted(ordner.glob("*.md")):
         if datei.is_file():
             for abschnitt in lese_absaetze(datei):
@@ -90,7 +94,7 @@ def speichere_abschnitte(abschnitte, vektoren):
 def main():
     abschnitte = lade_abschnitte()
     if not abschnitte:
-        raise SystemExit("Keine Absätze in examples/rag/ gefunden.")
+        raise SystemExit("Im gewählten Dokumentordner wurden keine Absätze gefunden.")
 
     # Beim Import kodieren wir nur Dokumentabsätze, keine Fragen.
     modell = lade_e5_modell()
