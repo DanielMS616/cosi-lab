@@ -91,6 +91,16 @@ ihre Reihenfolge vor und nach der Promptänderung gleich.
 | P08 | Nicht geprüft | Gemini #18 | Fachlich bestanden: Drehzahl bleibt offen, Temperaturregel mit Beleg von Rang 1 beantwortet. Die Zeile „Nicht belegt“ wiederholt die Teilfrage. |
 
 
+### Fehlende Angaben kurz benennen
+
+| Fall | Zwischenstand ohne Hinweisregel | Ergebnis mit beiden Regeln |
+| --- | --- | --- |
+| P05 | Gemini #19: Fehlende Breite kurz benannt, aber Zitat in der „Nicht belegt“-Zeile und kein Zeichnungshinweis. | Gemini #21: bestanden. Fehlende Breite kurz benannt; Zeichnung separat und korrekt belegt. |
+| P08 | Gemini #20: bestanden. Drehzahl kurz als unbelegt benannt; Temperaturregel korrekt zitiert. | Gemini #22: bestanden. Beide Teilantworten bleiben korrekt, auch mit wiederhergestellter Hinweisregel. |
+
+
+---
+
 
 | Fall | Rang der erwarteten Belege | GPT: Lauf-ID und Ergebnis | Gemini: Lauf-ID und Ergebnis | Auffälligkeit |
 | --- |----------------------------|---------------------------|------------------------------|---------------|
