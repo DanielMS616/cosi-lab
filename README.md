@@ -2,7 +2,7 @@
 
 Cosi-Lab ist ein Python-Lernprojekt mit zwei Anwendungen. Die **Temperaturauswertung** zählt im Terminal Messwerte aus CSV-Dateien und kann daraus einen Modellbericht erstellen. Die **Dokusuche** beantwortet im Browser oder Terminal Fragen zu lokalen Markdown-Dateien mit E5, PostgreSQL und wahlweise GPT oder Gemini. Beide Anwendungen speichern Modellläufe lokal in SQLite.
 
-**Stand: 24.11.2026 · Branch `rag-e5-neustart`.** Die [Browseranleitung](#dokusuche-im-browser) führt von der Vorschau bis zum gespeicherten Lauf. Das [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) erklärt den Neustart der Dokusuche, den Branchwechsel und den Arbeitsordner auf Mac und Cosi-Lab.
+**Stand: 25.11.2026 · Branch `rag-e5-neustart`.** Die [Browseranleitung](#dokusuche-im-browser) führt von der Vorschau bis zum gespeicherten Lauf. Der [Praxisbestand zur Pumpenwartung](#praxisbestand-zur-pumpenwartung) lässt sich getrennt vom Beispielbestand verwenden. Das [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) erklärt den Neustart der Dokusuche und den Arbeitsordner auf Mac und Cosi-Lab.
 
 ## Datenfluss
 
@@ -31,8 +31,8 @@ Die **Temperaturauswertung** nimmt einen anderen Weg: CSV → Kennzahlen → opt
 
 | Speicher | Aufgabe | Was nach einer Änderung passiert |
 | --- | --- | --- |
-| `examples/rag/` | Die Markdown-Originale der Dokusuche. | Änderungen werden mit `rag_import.py` in den Suchbestand übernommen. |
-| PostgreSQL, `public.rag_abschnitte` | Aktueller Suchbestand: Absatztext, relativer Dateipfad, Zeilenbereich und E5-Vektor. | Ein Neuimport ersetzt den Suchbestand. Er wird aus den Originalen neu aufgebaut. |
+| `examples/rag/`, `examples/rag-praxis/` | Markdown-Originale für den Beispiel- und den Praxisbestand. | `RAG_BESTAND` wählt beim Import Ordner und Datenbank gemeinsam. |
+| PostgreSQL, `public.rag_abschnitte` | Absatztext, relativer Dateipfad, Zeilenbereich und E5-Vektor in der Datenbank des gewählten Bestands. | Ein Neuimport ersetzt die Absätze nur in dieser Datenbank. |
 | SQLite, `data/model_runs.sqlite3` | Laufhistorie: `model_runs` für Temperaturberichte und `rag_runs` für Dokufragen. | Ein Neuimport nach PostgreSQL ändert keine alten Läufe. Sie enthalten ihre damaligen Ausschnitte als eigene Kopie. |
 
 ## Schnellstart
@@ -110,9 +110,9 @@ docker compose -f compose.rag.yaml up -d --wait
 .venv/bin/python rag_import.py
 ```
 
-[compose.rag.yaml](compose.rag.yaml) startet PostgreSQL 17 mit pgvector als Dienst `rag-db`. Die Anwendung verbindet sich auf demselben Rechner mit `127.0.0.1:5433`, der Datenbank `cosi_rag` und der Rolle `cosi_rag`. Das lokale Passwort stammt aus `RAG_POSTGRES_PASSWORD`.
+[compose.rag.yaml](compose.rag.yaml) startet PostgreSQL 17 mit pgvector als Dienst `rag-db`. Die Anwendung verbindet sich auf demselben Rechner mit `127.0.0.1:5433` und der Rolle `cosi_rag`. Das lokale Passwort stammt aus `RAG_POSTGRES_PASSWORD`. Ohne `RAG_BESTAND` verwendet sie den Beispielbestand in `cosi_rag`.
 
-Der Import liest nur die Markdown-Dateien direkt in [examples/rag/](examples/rag/). Leerzeilen trennen die Absätze; Hauptüberschriften mit `# ` werden nicht als eigener Inhalt gespeichert. E5 kodiert die Absätze mit dem Präfix `passage:`. Die drei Beispieldateien ergeben **zwölf Absätze mit je 384 Vektorwerten**. Die README und die Hardware- und Fernzugriffsdoku gehören nicht zum aktuellen Suchbestand.
+Im Standardbestand liest der Import die Markdown-Dateien direkt in [examples/rag/](examples/rag/). Leerzeilen trennen die Absätze; Hauptüberschriften mit `# ` werden nicht als eigener Inhalt gespeichert. E5 kodiert die Absätze mit dem Präfix `passage:`. Die drei Beispieldateien ergeben **zwölf Absätze mit je 384 Vektorwerten**. Die README und die Hardware- und Fernzugriffsdoku gehören zu keinem der beiden Suchbestände.
 
 ```bash
 docker compose -f compose.rag.yaml exec -T rag-db \
@@ -125,6 +125,33 @@ docker compose -f compose.rag.yaml exec -T rag-db \
 ```
 
 Die zweite Abfrage sollte im Beispiel vier Absätze pro Datei mit je 384 Dimensionen zeigen. Nach Änderungen am Dokumentbestand führst du `rag_import.py` erneut aus. Der Import ersetzt die vorhandenen Absätze in einer Transaktion; schlägt das Einfügen fehl, bleibt der bisherige Bestand erhalten. PostgreSQL hält seine Daten im Docker-Volume `cosi-e5-rag_rag-db-data`. Mit `docker compose -f compose.rag.yaml stop` kannst du den Dienst anhalten und mit `up -d --wait` wieder starten, ohne das Volume zu löschen.
+
+### Praxisbestand zur Pumpenwartung
+
+`RAG_BESTAND` legt für Import und Suche fest, mit welchem Bestand sie arbeiten:
+
+| Wert | Dokumentordner | PostgreSQL-Datenbank | Absätze |
+| --- | --- | --- | --- |
+| `beispiele` (Standard) | `examples/rag/` | `cosi_rag` | 12 |
+| `praxis` | `examples/rag-praxis/` | `cosi_rag_praxis` | 9 |
+
+Starte zuerst PostgreSQL wie oben beschrieben. Lege beim ersten Einrichten des Praxisbestands die zweite Datenbank im selben Container an und importiere die Pumpendokumente. Existiert die Datenbank bereits, überspringe `createdb`.
+
+```bash
+docker compose -f compose.rag.yaml exec -T rag-db \
+  createdb -U cosi_rag cosi_rag_praxis
+
+RAG_BESTAND=praxis .venv/bin/python rag_import.py
+```
+
+Starte die Browseroberfläche aus demselben Projektordner mit:
+
+```bash
+RAG_BESTAND=praxis .venv/bin/python -m uvicorn rag_api:app \
+  --host 127.0.0.1 --port 8010
+```
+
+Falls Uvicorn dort schon läuft, beende ihn vorher mit `Ctrl+C`. Der SSH-Tunnel bleibt wie unten beschrieben. Für die Terminalsuche setze `RAG_BESTAND=praxis` vor den Aufruf von `rag_cli.py`. Zum Wechsel zurück startest du die Suche oder den Server mit `RAG_BESTAND=beispiele`. Ein Wechsel erfordert keinen Neuimport. Die Laufhistorie in SQLite bleibt im selben Arbeitsordner für beide Bestände gemeinsam.
 
 ### Dokusuche im Browser
 
@@ -153,7 +180,7 @@ ssh -N -o ExitOnForwardFailure=yes \
 
 Öffne [http://127.0.0.1:8011/](http://127.0.0.1:8011/) im Mac-Browser. Der Tunnel leitet den Mac-Port `8011` zum Port `8010` auf Cosi-Lab weiter. Die Browseroberfläche nutzt die SQLite-Datei des Rechners, auf dem Uvicorn läuft. Mac und Cosi-Lab haben deshalb getrennte Laufhistorien.
 
-**Ein Probelauf mit H-12:**
+**Ein Probelauf mit H-12 im Beispielbestand:**
 
 1. Frage **„Wie breit soll die Halterung H-12 sein?“** eingeben, Trefferzahl **3** einstellen und **Vorschau laden** wählen. Die Fundstellen `6-7`, `3-4` und `9-11` aus `masspruefung-h12.md` erscheinen mit Ähnlichkeitswert; der Prompt lässt sich aufklappen. Die Vorschau ruft kein Antwortmodell auf und speichert keinen Lauf.
 2. GPT oder Gemini wählen und **Antwort anfordern** klicken. Dabei gehen die Frage und die ausgewählten Ausschnitte an den Anbieter. Die erwartete Antwort lässt das Sollmaß offen und verweist mit Fundstelle `6-7` auf die separate Zeichnung. Die neue Lauf-ID erscheint in der Historie.
@@ -169,7 +196,7 @@ Die interaktive API-Dokumentation ist unter `/docs` erreichbar. Ohne E5, Postgre
 | `POST /rag/vorschau` | Mit `frage` und optional `top_k` die Fundstellen und den Prompt ansehen. `top_k` liegt zwischen 1 und 20; Standard ist 3. |
 | `POST /rag/antwort` | Dieselbe Anfrage mit `anbieter` (`gpt` oder `gemini`) beantworten. Bei gefundenen Abschnitten speichert die API den Lauf. |
 | `GET /rag/laeufe?limit=10` | Neueste gespeicherte Läufe auflisten. Das Limit liegt zwischen 1 und 100; Standard ist 10. |
-| `GET /rag/laeufe/{lauf_id}` | Einen Lauf mit Antwort, Prompt, Fundstellen und Messwerten lesen. |
+| `GET /rag/laeufe/{lauf_id}` | Einen Lauf mit Antwort, Prompt, Fundstellen, Zitatprüfung und Messwerten lesen. |
 
 ### Fundstellen und Antworten im Terminal
 
@@ -200,11 +227,13 @@ E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortier
   "Wie breit soll die Halterung H-12 sein?" --top-k 3 --show-prompt --gemini
 ```
 
-Die Anbieter erhalten bei gleichen Suchergebnissen denselben Kontext. GPT nutzt `gpt-4o-mini`, Gemini `gemini-3.5-flash-lite`. Das Limit beträgt bei Dokufragen 240 Ausgabetoken, bei Temperaturberichten standardmäßig 120. Der RAG-Prompt fordert bei belegten Aussagen eine genaue Fundstelle und bei fehlenden Angaben `Nicht belegt:`. Ein Satz wie „Das Sollmaß steht in einer separaten Zeichnung“ belegt nur den Verweis, nicht die gesuchte Breite.
+Die Anbieter erhalten bei gleichen Suchergebnissen denselben Kontext. GPT nutzt `gpt-4o-mini`, Gemini `gemini-3.5-flash-lite`. Das Limit beträgt bei Dokufragen 240 Ausgabetoken, bei Temperaturberichten standardmäßig 120. Der RAG-Prompt fordert für jede Teilfrage eine eigene Antwort. Belegte Aussagen bekommen die genaue Fundstelle. Fehlende Angaben werden kurz mit `Nicht belegt:` benannt. Verweist ein Ausschnitt ausdrücklich auf die fehlende Angabe, steht der Verweis als eigene `Hinweis:`-Zeile mit Fundstelle darunter. Ein Satz wie „Das Sollmaß steht in einer separaten Zeichnung“ belegt den Verweis; die Breite bleibt offen.
 
 ### Zitate prüfen
 
-Die Zitatprüfung gleicht erkannte Zitate mit den Fundstellen aus dem Prompt ab. Pfad und Zeilenbereich müssen genau übereinstimmen: Steht `examples/rag/masspruefung-h12.md:6-7` im Prompt, ist ein Zitat derselben Datei mit `6-8` unbekannt. Die CLI und die frisch erzeugte Antwort im Browser zeigen dafür eine Warnung an; der Lauf wird trotzdem gespeichert. Eine Antwort ohne Zitat löst keine Warnung aus. Ob der zitierte Absatz die Aussage tatsächlich belegt, prüft diese Funktion nicht.
+Die Zitatprüfung gleicht erkannte Zitate mit den Fundstellen aus dem Prompt ab. Pfad und Zeilenbereich müssen genau übereinstimmen. In Praxislauf #34 auf Cosi-Lab wurden `teileliste-p17.md:3-4` und `teileliste-p17.md:6-7` getrennt übergeben. Das Zitat `teileliste-p17.md:3-7` löst daher eine Warnung aus.
+
+Die CLI und der Browser zeigen unbekannte Zitate an. Im Browser steht die Warnung **unter der Antwort**, sowohl bei neuen Antworten als auch beim Öffnen eines gespeicherten Laufs. Die API prüft beim Lesen die gespeicherte Antwort gegen die damals gespeicherten Ausschnitte. Dafür ist kein neuer Modellaufruf nötig. Eine Antwort ohne Zitat löst keine Warnung aus. Ob der zitierte Absatz die Aussage tatsächlich belegt, prüft diese Funktion nicht.
 
 ### Laufhistorie und Messwerte
 
@@ -245,6 +274,8 @@ Die beiden `unittest`-Befehle starten **16 Tests**: zehn für Temperaturauswertu
 
 Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, welche Belege die Suche findet und ob das Antwortmodell sie richtig verwendet. Am 20.11.2026 wurden sieben RAG-Fragen mit `--top-k 3` auf dem Mac ausgewertet, einschließlich zweier bereits gespeicherter H-12-Läufe. Für alle sechs Fragen mit erwarteten Belegen lagen die nötigen Absätze unter den ersten drei Treffern. GPT bestand sieben Fälle, Gemini sechs. Bei der Frage nach einer Bibliotheksöffnungszeit gab Gemini keine Uhrzeit an, nannte aber irrelevante Fundstellen. Ein angegebener Zeilenbereich stand so nicht im Prompt. Die Prüfreihe hält die Lauf-IDs fest; sie ist kein allgemeiner Modellvergleich.
 
+Die [Praxisprüfreihe zur Pumpenwartung](docs/versuche/rag-praxis-pruefreihe.md) enthält vier Fragen mit vorab festgelegten Belegen. Auf Cosi-Lab fanden sich am 25.11.2026 alle benötigten Belege unter den ersten drei Treffern. GPT und Gemini bestanden jeweils drei von vier Praxisfällen vollständig: Gemini übersah bei W03 die belegte Teilenummer, GPT gab bei W04 einen nicht gelieferten Zeilenbereich an. Abschließend wurde im Browser geprüft, dass Lauf #34 die Zitatwarnung zeigt und Lauf #33 ohne Warnung bleibt.
+
 ## Dateiübersicht
 
 ### Programm und Konfiguration
@@ -256,7 +287,7 @@ Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, wel
 | [`rag_import.py`](rag_import.py) | Markdown-Absätze kodieren und den PostgreSQL-Suchbestand neu befüllen. |
 | [`rag_embeddings.py`](rag_embeddings.py) | E5-Modell für Import und Suche bereitstellen. |
 | [`rag_suche.py`](rag_suche.py) | Fragevektor berechnen, Fundstellen aus PostgreSQL holen und Laufzeiten messen. |
-| [`rag_db.py`](rag_db.py) | PostgreSQL-Verbindung und sortierte pgvector-Abfrage. |
+| [`rag_db.py`](rag_db.py) | Dokumentbestand auswählen, PostgreSQL verbinden und nach Ähnlichkeit suchen. |
 | [`rag_prompt.py`](rag_prompt.py) | Prompt aus Frage und ausgewählten Fundstellen bauen. |
 | [`rag_ablauf.py`](rag_ablauf.py) | Modellaufruf, Zitatprüfung und SQLite-Speicherung verbinden. |
 | [`rag_antwort.py`](rag_antwort.py) | Anbieteradapter aufrufen und die Antwort um Aufrufdaten ergänzen. |
@@ -282,7 +313,8 @@ Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, wel
 | --- | --- |
 | [`examples/temperature_sample.csv`](examples/temperature_sample.csv), [`examples/temperature_invalid.csv`](examples/temperature_invalid.csv) | Einstieg mit gültigen und fehlenden Messwerten sowie ein Beispiel für die Meldung bei einem ungültigen Wert. |
 | [`examples/eval_threshold_equal.csv`](examples/eval_threshold_equal.csv), [`examples/eval_mostly_missing.csv`](examples/eval_mostly_missing.csv), [`examples/eval_negative_temperatures.csv`](examples/eval_negative_temperatures.csv) | Vergleichsfälle für Schwellenwert, fehlende Werte und negative Temperaturen. |
-| [Fräse F-07](examples/rag/fraese-f07.md), [Maßprüfung H-12](examples/rag/masspruefung-h12.md), [Verstärkerrack „Nachtflug“](examples/rag/nachtflug-rack.md) | Der derzeitige Dokumentbestand der RAG-Suche. |
+| [Fräse F-07](examples/rag/fraese-f07.md), [Maßprüfung H-12](examples/rag/masspruefung-h12.md), [Verstärkerrack „Nachtflug“](examples/rag/nachtflug-rack.md) | Standardbestand der RAG-Suche. |
+| [`examples/rag-praxis/`](examples/rag-praxis/), [Praxisprüfreihe](docs/versuche/rag-praxis-pruefreihe.md) | Fiktive Wartungsunterlagen, erwartete Belege und Modellvergleich zur Pumpenwartung. |
 | [`tests/test_temperature_storage.py`](tests/test_temperature_storage.py), [`tests/test_temperature_report_export.py`](tests/test_temperature_report_export.py) | Automatisierte Temperaturtests für SQLite-Läufe und Export. |
 | [`tests/test_rag_zitate.py`](tests/test_rag_zitate.py), [`tests/test_rag_ablauf.py`](tests/test_rag_ablauf.py) | Tests für die Zitatprüfung und das Zusammenspiel von Antwortablauf und SQLite. |
 | [`tests/api/test_rag_api.py`](tests/api/test_rag_api.py) | Tests für HTTP-Antworten, Fehlerfälle und gespeicherte Läufe. |
