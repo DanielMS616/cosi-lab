@@ -58,3 +58,43 @@ Bei allen sechs Fällen mit erwartetem Beleg standen sämtliche benötigten
 Fundstellen unter den ersten drei Treffern. Für P06 gab es wie erwartet keinen
 Beleg zur Frage. GPT bestand 7 von 7 Fällen, Gemini 6 von 7. Gemini ließ bei P06
 die Uhrzeit offen, nannte aber themenfremde Fundstellen.
+
+
+## Protokoll 2026-11-25
+
+Testläufe über Cosi-lab per SSH. Vier Fälle: P01 → P04 → P05 → P06. Trefferzahl k = 3 und Modell = gemini-3.5-flash-lite.
+Commit: 70d9a8c
+
+### 25.11.2026 – Browser auf Cosi-Lab
+
+**Commit:** 70d9a8c · **Modell:** `gemini-3.5-flash-lite` · **Top-k:** 3
+
+| Fall | Rang im gespeicherten Prompt | Lauf-ID | Antwortbefund |
+| --- | --- | --- | --- |
+| P01 | Fräse: 1 | 9 | Bestanden: Genau 60 °C zählen nicht als Überschreitung; passender Beleg zitiert. |
+| P04 | Rack: 1; Fräse: 2 | 10 | Nicht bestanden: Fräse fälschlich als unbelegt markiert, Rack nicht beantwortet. Beide Belege lagen vor. |
+| P05 | Zeichnungshinweis: 1 | 11 | Bestanden: Keine Sollbreite genannt; separate Zeichnung mit passender Fundstelle angegeben. |
+| P06 | Kein Beleg erwartet; drei themenfremde Treffer | 12 | Bestanden: Öffnungszeit als unbelegt markiert, ohne Uhrzeit, Hinweis oder Zitat. |
+
+| Fall | Rang der erwarteten Belege | GPT: Lauf-ID und Ergebnis | Gemini: Lauf-ID und Ergebnis | Auffälligkeit |
+| --- |----------------------------|---------------------------|------------------------------|---------------|
+| P01 | x                          | x                         | x                            | x             |
+| P02 | x                          | x                         | x                            | x             |
+| P03 | x                          | x                         | x                            | x             |
+| P04 | x                          | x                         | x                            | x             |
+| P05 | x                          | x                         | x                            | x             |
+| P06 | x                          | x                         | x                            | x             |
+| P07 | x                          | x                         | x                            | x             |
+
+
+## Leere Tabelle zum Kopieren
+
+| Fall | Rang der erwarteten Belege | GPT: Lauf-ID und Ergebnis | Gemini: Lauf-ID und Ergebnis | Auffälligkeit |
+| --- |----------------------------|---------------------------|------------------------------|---------------|
+| P01 | x                          | x                         | x                            | x             |
+| P02 | x                          | x                         | x                            | x             |
+| P03 | x                          | x                         | x                            | x             |
+| P04 | x                          | x                         | x                            | x             |
+| P05 | x                          | x                         | x                            | x             |
+| P06 | x                          | x                         | x                            | x             |
+| P07 | x                          | x                         | x                            | x             |
