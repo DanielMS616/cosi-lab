@@ -24,6 +24,14 @@ def baue_prompt(frage, treffer):
         "Zeile im Format 'Nicht belegt: <fehlende Angabe>'. Benenne die "
         "fehlende Angabe als kurze Wortgruppe, statt die Frage oder Teilfrage "
         "zu wiederholen. Setze kein Zitat in diese Zeile und rate nicht.",
+
+        # Ein belegter Verweis steht getrennt von der fehlenden Angabe.
+        "Sagt ein Ausschnitt ausdrücklich, wo die fehlende Angabe steht, "
+        "ergänze direkt darunter 'Hinweis: <Verweis> "
+        "(Fundstelle: <Pfad:Start-Ende>)'. Übernimm Pfad und Zeilenbereich "
+        "exakt aus dem Ausschnitt. Ohne solchen Verweis entfällt die "
+        "Hinweiszeile. Beantworte alle übrigen Teile weiter.",
+
         f"\nFrage: {frage}",
     ]
 
