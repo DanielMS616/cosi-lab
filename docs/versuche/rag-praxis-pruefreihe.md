@@ -32,3 +32,15 @@ Die Zuordnung P-17 → S-217 stand jeweils auf Rang 3. GPT (#29)
 beantwortete beide Teilfragen korrekt. Gemini (#27 und #30) nannte das
 Wartungsintervall richtig, stufte die belegte Teilenummer aber als
 unbelegt ein und verwies stattdessen auf den Absatz zur Lagerausgabe.
+
+
+### W03: Reihenfolgeprobe mit Gemini
+
+Aus Lauf #30 wurden dieselbe Frage, dieselben Antwortregeln und dieselben
+drei Ausschnitte übernommen. Nur Position 1 und 3 wurden getauscht.
+Der direkte Beleg für S-217 (`teileliste-p17.md:3-4`) stand damit zuerst.
+
+Gemini stufte die Teilenummer weiterhin als unbelegt ein. Das Intervall
+von 120 Betriebsstunden wurde korrekt belegt. Der zuvor ausgegebene
+Hinweis zur Lagerausgabe entfiel. Die Probe lief ohne neue Suche und
+wurde nicht als eigener SQLite-Lauf gespeichert.
