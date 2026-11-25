@@ -18,6 +18,7 @@ from rag_ablauf import beantworte_und_speichere
 from rag_embeddings import E5_MODELL
 from rag_prompt import baue_prompt
 from rag_run_storage import RUN_DATABASE, list_rag_runs, load_rag_run
+from rag_zitate import pruefe_zitate
 
 
 app = FastAPI(title="Cosi-Lab RAG-API")
@@ -67,6 +68,9 @@ def lese_rag_lauf(lauf_id: Annotated[int, Path(ge=1, le=GROESSTE_LAUF_ID)]):
 
     if lauf is None:
         raise HTTPException(status_code=404, detail=f"RAG-Lauf {lauf_id} nicht gefunden.")
+
+    # Wie in der Terminalansicht: Prüfe die Antwort gegen ihre damaligen Quellen.
+    lauf["zitatpruefung"] = pruefe_zitate(lauf["response_text"], lauf["sources"])
 
     # FastAPI wandelt das Dictionary in eine JSON-Antwort um.
     return lauf
