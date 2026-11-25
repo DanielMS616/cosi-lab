@@ -76,6 +76,21 @@ Commit: 70d9a8c
 | P05 | Zeichnungshinweis: 1 | 11 | Bestanden: Keine Sollbreite genannt; separate Zeichnung mit passender Fundstelle angegeben. |
 | P06 | Kein Beleg erwartet; drei themenfremde Treffer | 12 | Bestanden: Öffnungszeit als unbelegt markiert, ohne Uhrzeit, Hinweis oder Zitat. |
 
+
+### 25.11.2026 – Teilfragen im Prompt getrennt prüfen
+
+Cosi-Lab, Browser, Top-k: 3. Pro Fall blieben die Fundstellen und
+ihre Reihenfolge vor und nach der Promptänderung gleich.
+
+| Fall | Alter Prompt | Neuer Prompt | Befund |
+| --- | --- | --- | --- |
+| P04 | Gemini #10 und #14: nicht bestanden; GPT #13: bestanden | Gemini #15 | Beide Teile korrekt und einzeln belegt. Das Rack wird entgegen der vorgegebenen Reihenfolge zuerst genannt. |
+| P05 | Gemini #11: bestanden | Gemini #16 | Sollbreite bleibt offen, Zeichnungshinweis korrekt belegt. Die Zeile „Nicht belegt“ wiederholt aber die Frage. |
+| P06 | Gemini #12: bestanden | Gemini #17 | Bestanden: Öffnungszeit bleibt offen, ohne Hinweis oder Zitat. |
+
+
+
+
 | Fall | Rang der erwarteten Belege | GPT: Lauf-ID und Ergebnis | Gemini: Lauf-ID und Ergebnis | Auffälligkeit |
 | --- |----------------------------|---------------------------|------------------------------|---------------|
 | P01 | x                          | x                         | x                            | x             |
