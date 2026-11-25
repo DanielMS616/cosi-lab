@@ -109,6 +109,10 @@
         <p id="detail-metadaten"></p>
         <h3>Antwort</h3>
         <p id="detail-antwort" class="quellentext"></p>
+        <div id="detail-zitatwarnung" hidden>
+          <p><strong>Diese Zitate standen nicht im Prompt:</strong></p>
+          <ul></ul>
+        </div>
         <h3>Fundstellen</h3>
         <ol id="detail-fundstellen"></ol>
         <details id="detail-prompt-klappe">
@@ -192,6 +196,22 @@
       vorschauErgebnis.hidden = false;
     }
 
+    function zeigeZitatwarnung(zielId, zitatpruefung) {
+      // Beide Ansichten verwenden das Prüfergebnis aus der API.
+      const warnung = document.getElementById(zielId);
+      const warnliste = warnung.querySelector("ul");
+      const unbekannt = zitatpruefung?.unbekannt ?? [];
+
+      // Entferne beim Wechsel des Laufs auch alle alten Warnungen.
+      warnliste.replaceChildren();
+      for (const zitat of unbekannt) {
+        const eintrag = document.createElement("li");
+        eintrag.textContent = zitat;
+        warnliste.append(eintrag);
+      }
+      warnung.hidden = unbekannt.length === 0;
+    }
+
     function zeigeModellantwort(daten) {
       // Auch die Modellantwort bleibt Text, selbst wenn sie HTML enthält.
       document.querySelector("#modell-text").textContent = daten.antwort;
@@ -203,15 +223,7 @@
       modellTechnikStatus.textContent = "";
       modellTechnikInhalt.replaceChildren();
 
-      const unbekannt = daten.zitatpruefung.unbekannt;
-      const warnliste = document.querySelector("#unbekannte-zitate");
-      warnliste.replaceChildren();
-      for (const zitat of unbekannt) {
-        const eintrag = document.createElement("li");
-        eintrag.textContent = zitat;
-        warnliste.append(eintrag);
-      }
-      document.querySelector("#zitatwarnung").hidden = unbekannt.length === 0;
+      zeigeZitatwarnung("zitatwarnung", daten.zitatpruefung);
       modellErgebnis.hidden = false;
     }
 
@@ -392,6 +404,7 @@
         document.querySelector("#detail-frage").textContent = lauf.question;
         document.querySelector("#detail-metadaten").textContent = formatiereLaufMetadaten(lauf);
         document.querySelector("#detail-antwort").textContent = lauf.response_text;
+        zeigeZitatwarnung("detail-zitatwarnung", lauf.zitatpruefung);
         zeigeFundstellen(document.querySelector("#detail-fundstellen"), lauf.sources);
         document.querySelector("#detail-prompt").textContent = lauf.prompt;
         document.querySelector("#detail-prompt-klappe").open = false;
