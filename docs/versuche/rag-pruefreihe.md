@@ -53,6 +53,7 @@ Läufe mit derselben Frage, denselben Ausschnitten und `--top-k 3` übernommen.
 | P05 | Zeichnungshinweis: 1 | 1 · bestanden | 2 · bestanden | Beide benennen die fehlende Sollbreite und verweisen mit der passenden Fundstelle auf die Zeichnung. |
 | P06 | Kein Beleg; drei themenfremde Treffer | 4 · bestanden | 6 · teilweise: keine Uhrzeit, aber unbelegte Fundstellen | Die Ausschnitte enthalten keinen Hinweis auf Öffnungszeiten. Gemini nennt zusätzlich `nachtflug-rack.md:6-10`, obwohl dieser zusammenhängende Bereich nicht im Prompt stand. |
 | P07 | Kühlmittel: 1 | 13 · bestanden | 14 · bestanden | Beide grenzen den Kühlmittelwert im Stillstand vom Spindellager im Dauerlauf ab und nennen keinen unbelegten Grenzwert. |
+| P08 · Belegter und unbelegter Teil | Welche Drehzahl hat die Spindel der Fräse F-07 im Dauerlauf, und zählen genau 60 °C dabei als Überschreitung? | Keine Angabe zur Drehzahl; `examples/rag/fraese-f07.md:3-5` für die Temperaturregel. | Fehlende Drehzahl kurz benennen. Danach mit Fundstelle erklären, dass genau 60 °C nicht als Überschreitung zählen. |
 
 Bei allen sechs Fällen mit erwartetem Beleg standen sämtliche benötigten
 Fundstellen unter den ersten drei Treffern. Für P06 gab es wie erwartet keinen
@@ -87,7 +88,7 @@ ihre Reihenfolge vor und nach der Promptänderung gleich.
 | P04 | Gemini #10 und #14: nicht bestanden; GPT #13: bestanden | Gemini #15 | Beide Teile korrekt und einzeln belegt. Das Rack wird entgegen der vorgegebenen Reihenfolge zuerst genannt. |
 | P05 | Gemini #11: bestanden | Gemini #16 | Sollbreite bleibt offen, Zeichnungshinweis korrekt belegt. Die Zeile „Nicht belegt“ wiederholt aber die Frage. |
 | P06 | Gemini #12: bestanden | Gemini #17 | Bestanden: Öffnungszeit bleibt offen, ohne Hinweis oder Zitat. |
-
+| P08 | Nicht geprüft | Gemini #18 | Fachlich bestanden: Drehzahl bleibt offen, Temperaturregel mit Beleg von Rang 1 beantwortet. Die Zeile „Nicht belegt“ wiederholt die Teilfrage. |
 
 
 
