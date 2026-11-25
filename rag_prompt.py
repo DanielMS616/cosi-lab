@@ -19,15 +19,11 @@ def baue_prompt(frage, treffer):
         "vorangestelltes 'Ja' oder 'Nein'. Nenne direkt dahinter die passende "
         "Fundstelle im Format '(Fundstelle: <Pfad:Start-Ende>)'.",
 
-        # Eine fehlende Angabe betrifft nur den Teil, für den sie fehlt.
+        # Benenne die fehlende Angabe kurz, ohne die Teilfrage zu wiederholen.
         "Fehlt eine gesuchte Angabe, schreibe für diesen Teil eine eigene "
-        "Zeile im Format 'Nicht belegt: <fehlende Angabe>'. Benenne nur, was "
-        "fehlt. Setze kein Zitat in diese Zeile und rate nicht.",
-        "Sagt ein Ausschnitt ausdrücklich, wo die fehlende Angabe steht, "
-        "ergänze direkt darunter 'Hinweis: <Verweis> "
-        "(Fundstelle: <Pfad:Start-Ende>)'. Übernimm Pfad und Zeilenbereich "
-        "exakt aus dem Ausschnitt. Ohne solchen Verweis entfällt die "
-        "Hinweiszeile. Beantworte alle übrigen Teile weiter.",
+        "Zeile im Format 'Nicht belegt: <fehlende Angabe>'. Benenne die "
+        "fehlende Angabe als kurze Wortgruppe, statt die Frage oder Teilfrage "
+        "zu wiederholen. Setze kein Zitat in diese Zeile und rate nicht.",
         f"\nFrage: {frage}",
     ]
 
