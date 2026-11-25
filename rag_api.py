@@ -1,7 +1,7 @@
 """Lokaler HTTP-Zugang zu RAG-Vorschau, Antworten und gespeicherten Läufen."""
 
-import sqlite3
 import pathlib
+import sqlite3
 from json import JSONDecodeError
 from typing import Annotated, Literal
 
