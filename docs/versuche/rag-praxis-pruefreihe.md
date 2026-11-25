@@ -23,3 +23,12 @@ Beim Test notieren wir Belegränge, Lauf-ID und Antwortbefund getrennt.
 | W02 | Störungsprotokoll: 1 | 26 | Bestanden: Kunststoffspäne im Ansaugsieb und 15 l/min nach der Reinigung, beides belegt. |
 | W03 | Teileliste: 3; Wartungsanweisung: 2 | 27 | Teilweise bestanden: 120 Betriebsstunden korrekt belegt; S-217 trotz direktem Beleg als unbelegt markiert. |
 | W04 | Teileliste: 1; kein Preisbeleg erwartet | 28 | Bestanden: Preis bleibt offen; S-217 korrekt belegt. |
+
+
+### W03 unverändert gegengeprüft
+
+Prompt und Reihenfolge der Fundstellen waren in #27, #29 und #30 gleich.
+Die Zuordnung P-17 → S-217 stand jeweils auf Rang 3. GPT (#29)
+beantwortete beide Teilfragen korrekt. Gemini (#27 und #30) nannte das
+Wartungsintervall richtig, stufte die belegte Teilenummer aber als
+unbelegt ein und verwies stattdessen auf den Absatz zur Lagerausgabe.
