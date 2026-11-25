@@ -44,3 +44,16 @@ Gemini stufte die Teilenummer weiterhin als unbelegt ein. Das Intervall
 von 120 Betriebsstunden wurde korrekt belegt. Der zuvor ausgegebene
 Hinweis zur Lagerausgabe entfiel. Die Probe lief ohne neue Suche und
 wurde nicht als eigener SQLite-Lauf gespeichert.
+
+
+### Modellvergleich über alle vier Praxisfälle
+
+Je Frage erhielten beide Modelle denselben Prompt mit denselben drei
+Fundstellen in derselben Reihenfolge.
+
+| Fall | Gemini | GPT | Befund |
+| --- | --- | --- | --- |
+| W01 | #25: bestanden | #31: bestanden | Beide nennen 120 Betriebsstunden für Prüfstand West mit passendem Beleg. |
+| W02 | #26: bestanden | #32: bestanden | Beide nennen Kunststoffspäne und 15 l/min nach der Reinigung, jeweils belegt. |
+| W03 | #27 und #30: teilweise bestanden | #29 und #33: bestanden | GPT belegt beide Angaben; Gemini stuft S-217 trotz direktem Beleg als unbelegt ein. |
+| W04 | #28: bestanden | #34: teilweise bestanden | GPT lässt den Preis offen und nennt S-217, vertauscht aber die Teilfragen und zitiert den nicht gelieferten Bereich `:3-7`. |
