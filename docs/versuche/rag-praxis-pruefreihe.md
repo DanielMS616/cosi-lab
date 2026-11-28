@@ -266,3 +266,20 @@ der Frage und belegte beide Angaben exakt. Den Vorfall vom
 20. November auf Rang 2 nutzte es nicht für die Antwort.
 Die Zitatprüfung meldete keine unbekannten Fundstellen.
 Die Probe wurde nicht als neuer SQLite-Lauf gespeichert.
+
+
+### Vergleichsfrage mit zwei Kennungen
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand · Top-k 3.
+
+Frage: Nach wie vielen Betriebsstunden wird das Ansaugsieb bei
+P-17 und bei P-71 jeweils kontrolliert?
+
+Mit und ohne Kennungsvariante erschienen dieselben Fundstellen:
+
+1. `wartungsanweisung-p17.md:3-5` – belegt 120 Stunden für P-17 und 80 für P-71.
+2. `wartungsanweisung-p71.md:3-5`
+3. `stoerungsprotokoll-p71.md:3-5`
+
+Bestanden: Bei zwei verschiedenen Kennungen blieb die E5-Reihenfolge
+unverändert. Ein Antwortmodell wurde nicht aufgerufen.
