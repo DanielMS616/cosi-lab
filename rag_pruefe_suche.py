@@ -1,4 +1,4 @@
-"""Prüft die RAG-Suche für die vier Praxisfälle W01 bis W04.
+"""Prüft die RAG-Suche für die vier Praxisfälle W01 bis W05.
 
 Das Skript sucht einmal pro Frage und zeigt den Rang jedes erwarteten
 Belegs unter den ersten Treffern; die Anzahl lässt sich mit --top-k
@@ -52,6 +52,15 @@ PRUEFFAELLE = [
         # Ob das Modell den fehlenden Preis richtig behandelt, ist ein eigener Test.
         "belege": [("examples/rag-praxis/teileliste-p17.md", 3, 4)],
     },
+    {
+        "kennung": "W05",
+        "frage": (
+            "In welchem Fach liegt der Siebeinsatz S-271, "
+            "und für welche Pumpe ist er vorgesehen?"
+        ),
+        # Derselbe Absatz belegt das Lagerfach und die Zuordnung zur Pumpe.
+        "belege": [("examples/rag-praxis/wartungsanweisung-p71.md", 11, 13)],
+    },
 ]
 
 
@@ -96,7 +105,7 @@ def pruefe_fall(fall, top_k):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prüft die RAG-Suche für W01 bis W04.")
+    parser = argparse.ArgumentParser(description="Prüft die RAG-Suche für W01 bis W05.")
     parser.add_argument(
         "--top-k",
         type=int,

@@ -167,3 +167,16 @@ Der erwartete Beleg stand auf Rang 2; der Absatz zu S-217 und B-04 auf Rang 3.
 | Gemini | #42 | Bestanden: B-07, danach P-71. Beide Angaben korrekt belegt. |
 
 In beiden Läufen meldete die Zitatprüfung keine unbekannten Fundstellen.
+
+
+### Suchvergleich um W05 erweitert
+
+28.11.2026 · Cosi-Lab · unveränderter erweiterter Praxisbestand.
+Die Ränge von W01–W04 blieben gleich.
+
+| Ergebnis | Top-k 3 | Top-k 4 |
+| --- | --- | --- |
+| W05 · `wartungsanweisung-p71.md:11-13` | Rang 2 | Rang 2 |
+| **Suchchecks bestanden** | **4 von 5** | **5 von 5** |
+
+Bei Top-k 3 fehlt weiterhin nur der Beleg für S-217 in W03.
