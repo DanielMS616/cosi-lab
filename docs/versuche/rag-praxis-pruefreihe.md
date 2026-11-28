@@ -99,3 +99,15 @@ Pro Frage waren Prompt und Reihenfolge der Fundstellen identisch.
 Bei W04 stand der Preis von 38 Euro für P-71 auf Rang 1. Kein Modell
 übertrug ihn auf P-17. Die Zitatprüfung meldete in keinem der vier
 Läufe eine unbekannte Fundstelle.
+
+
+### W03 auf die Teilenummer eingegrenzt
+
+Basis: Gemini-Lauf #37 mit vier Treffern. Nur die Frage wurde ersetzt:
+„Welche Teilenummer hat der Siebeinsatz für P-17?“
+Die Ausschnitte, ihre Reihenfolge und das Modell blieben gleich.
+
+Gemini nannte S-217 und zitierte `teileliste-p17.md:3-4` von Rang 4.
+In der ursprünglichen zweiteiligen Frage hatte es die Teilenummer
+trotz desselben Belegs als unbelegt gemeldet. Für diese Probe wurde
+keine neue Suche gestartet und kein neuer SQLite-Lauf gespeichert.
