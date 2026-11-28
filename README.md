@@ -2,7 +2,7 @@
 
 Cosi-Lab ist ein Python-Lernprojekt mit zwei Anwendungen. Die **Temperaturauswertung** zählt im Terminal Messwerte aus CSV-Dateien und kann daraus einen Modellbericht erstellen. Die **Dokusuche** beantwortet im Browser oder Terminal Fragen zu lokalen Markdown-Dateien mit E5, PostgreSQL und wahlweise GPT oder Gemini. Beide Anwendungen speichern Modellläufe lokal in SQLite.
 
-**Stand: 25.11.2026 · Branch `rag-e5-neustart`.** Die [Browseranleitung](#dokusuche-im-browser) führt von der Vorschau bis zum gespeicherten Lauf. Der [Praxisbestand zur Pumpenwartung](#praxisbestand-zur-pumpenwartung) lässt sich getrennt vom Beispielbestand verwenden. Das [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) erklärt den Neustart der Dokusuche und den Arbeitsordner auf Mac und Cosi-Lab.
+**Stand: 28.11.2026 · Branch `rag-e5-neustart`.** Die [Browseranleitung](#dokusuche-im-browser) führt von der Vorschau bis zum gespeicherten Lauf. Die [Kennungsoption](#treffer-mit-gleicher-kennung-vorziehen) lässt sich im [Praxisbestand zur Pumpenwartung](#praxisbestand-zur-pumpenwartung) ausprobieren. Das [Lernjournal vom 19.11.2026](docs/journal/2026-11-19.md) erklärt den Neustart der Dokusuche und den Arbeitsordner auf Mac und Cosi-Lab.
 
 ## Datenfluss
 
@@ -15,7 +15,8 @@ flowchart TB
     Q["Frage im Browser oder Terminal"] --> E5["E5: Fragevektor"]
     E5 --> SEARCH["pgvector: beste Fundstellen"]
     PG --> SEARCH
-    SEARCH --> PROMPT["Prompt aus Frage und Ausschnitten"]
+    SEARCH --> RANK["Optional: Treffer mit passender Kennung vorziehen"]
+    RANK --> PROMPT["Prompt aus Frage und Ausschnitten"]
     PROMPT -->|Vorschau| VIEW["Prompt anzeigen"]
     PROMPT -->|Antwort angefordert| MODEL["GPT oder Gemini"]
     MODEL --> CHECK["Zitate mit Fundstellen abgleichen"]
@@ -133,7 +134,9 @@ Die zweite Abfrage sollte im Beispiel vier Absätze pro Datei mit je 384 Dimensi
 | Wert | Dokumentordner | PostgreSQL-Datenbank | Absätze |
 | --- | --- | --- | --- |
 | `beispiele` (Standard) | `examples/rag/` | `cosi_rag` | 12 |
-| `praxis` | `examples/rag-praxis/` | `cosi_rag_praxis` | 9 |
+| `praxis` | `examples/rag-praxis/` | `cosi_rag_praxis` | 15 |
+
+Die fiktiven Unterlagen zu P-17 und P-71 prüfen, ob die Suche und das Antwortmodell ähnlich benannte Pumpen, Teile und Störfälle auseinanderhalten.
 
 Starte zuerst PostgreSQL wie oben beschrieben. Lege beim ersten Einrichten des Praxisbestands die zweite Datenbank im selben Container an und importiere die Pumpendokumente. Existiert die Datenbank bereits, überspringe `createdb`.
 
@@ -143,6 +146,8 @@ docker compose -f compose.rag.yaml exec -T rag-db \
 
 RAG_BESTAND=praxis .venv/bin/python rag_import.py
 ```
+
+Falls dein Praxisbestand noch aus neun Absätzen besteht, importiere ihn erneut, damit auch die neuen P-71-Unterlagen in der Suche verfügbar sind.
 
 Starte die Browseroberfläche aus demselben Projektordner mit:
 
@@ -186,6 +191,23 @@ ssh -N -o ExitOnForwardFailure=yes \
 2. GPT oder Gemini wählen und **Antwort anfordern** klicken. Dabei gehen die Frage und die ausgewählten Ausschnitte an den Anbieter. Die erwartete Antwort lässt das Sollmaß offen und verweist mit Fundstelle `6-7` auf die separate Zeichnung. Die neue Lauf-ID erscheint in der Historie.
 3. **Technische Details** unter der neuen Antwort aufklappen. Für denselben Lauf lassen sich Antwort, Fundstellen, Prompt, Laufzeiten und Tokenzahlen später wieder in der Historie öffnen.
 
+### Treffer mit gleicher Kennung vorziehen
+
+Die Kennungsoption ist standardmäßig ausgeschaltet und gilt für **Vorschau laden** und **Antwort anfordern**. Ist sie eingeschaltet und enthält die Frage genau eine Pumpen- oder Teilekennung wie `P-17` oder `S-271`, holt die Suche zunächst bis zu fünf Kandidaten (bei größerem Top-k entsprechend mehr). Dann zieht sie Treffer vor, in deren **Absatztext** die Kennung vorkommt, und begrenzt die Ausgabe auf Top-k. Innerhalb der beiden Gruppen bleibt die E5-Reihenfolge erhalten; auch die angezeigten Ähnlichkeitswerte ändern sich nicht.
+
+Groß- und Kleinschreibung spielen bei Kennungen keine Rolle, und Wiederholungen derselben Kennung zählen einmal. Enthält die Frage keine solche Kennung oder mehrere unterschiedliche Kennungen, etwa `P-17` und `P-71`, bleibt es bei der normalen E5-Suche.
+
+**Browsertest W03 im Praxisbestand:** Stelle die Trefferzahl auf **3** und lade für diese Frage zweimal die Vorschau, einmal ohne und einmal mit Haken:
+
+> Welche Teilenummer hat der Siebeinsatz für P-17, und nach wie vielen Betriebsstunden ist die Siebkontrolle fällig?
+
+| Auswahl | Erwartung auf dem geprüften Stand |
+| --- | --- |
+| Ohne Haken | `teileliste-p17.md:3-4` mit der Teilenummer S-217 fehlt unter den ersten drei Treffern. |
+| Mit Haken | `wartungsanweisung-p17.md:3-5` mit den 120 Betriebsstunden steht auf Rang 1 und `teileliste-p17.md:3-4` auf Rang 2. |
+
+Die beiden Vorschauen reichen für diesen Test. Dabei wird kein Antwortmodell aufgerufen.
+
 ### API-Endpunkte
 
 Die interaktive API-Dokumentation ist unter `/docs` erreichbar. Ohne E5, PostgreSQL und Anbieter-Schlüssel lassen sich die Startseite und vorhandene SQLite-Läufe öffnen.
@@ -193,7 +215,7 @@ Die interaktive API-Dokumentation ist unter `/docs` erreichbar. Ohne E5, Postgre
 | Endpunkt | Zweck |
 | --- | --- |
 | `GET /` | Browseroberfläche laden. |
-| `POST /rag/vorschau` | Mit `frage` und optional `top_k` die Fundstellen und den Prompt ansehen. `top_k` liegt zwischen 1 und 20; Standard ist 3. |
+| `POST /rag/vorschau` | Mit `frage` und optional `top_k` und `kennung_vorziehen` die Fundstellen und den Prompt ansehen. `top_k` liegt zwischen 1 und 20; Standard ist 3. Für die Kennungsoption gilt standardmäßig `false`. |
 | `POST /rag/antwort` | Dieselbe Anfrage mit `anbieter` (`gpt` oder `gemini`) beantworten. Bei gefundenen Abschnitten speichert die API den Lauf. |
 | `GET /rag/laeufe?limit=10` | Neueste gespeicherte Läufe auflisten. Das Limit liegt zwischen 1 und 100; Standard ist 10. |
 | `GET /rag/laeufe/{lauf_id}` | Einen Lauf mit Antwort, Prompt, Fundstellen, Zitatprüfung und Messwerten lesen. |
@@ -211,6 +233,8 @@ Die interaktive API-Dokumentation ist unter `/docs` erreichbar. Ohne E5, Postgre
 ```
 
 E5 kodiert pro Frage nur den mit `query:` markierten Fragetext. pgvector sortiert die bereits gespeicherten Absatzvektoren nach Kosinusabstand. Browser und CLI zeigen die **Kosinusähnlichkeit** als `1 - Abstand`: Größere Werte stehen für höhere Ähnlichkeit. Ob ein Absatz die Antwort tatsächlich belegt, muss anhand seines Inhalts geprüft werden.
+
+`rag_cli.py` verwendet die normale E5-Reihenfolge. Im Terminal ist die Kennungsoption im Suchcheck `rag_pruefe_suche.py` verfügbar.
 
 | Option | Wirkung |
 | --- | --- |
@@ -239,6 +263,8 @@ Die CLI und der Browser zeigen unbekannte Zitate an. Im Browser steht die Warnun
 
 Nach einer Modellantwort meldet die CLI `RAG-Lauf gespeichert: ID …`. Eine reine Suche oder Promptvorschau legt keinen Lauf an. In `rag_runs` stehen unter anderem die Frage, der tatsächlich gesendete Prompt, die Antwort, der gewählte Anbieter, das E5-Modell, `top_k` und die ausgewählten Originalausschnitte in Trefferreihenfolge.
 
+Ob die Kennungsoption gewählt war und ob sie angewendet wurde, wird noch nicht gesondert gespeichert.
+
 ```bash
 .venv/bin/python show_rag_run.py 1
 
@@ -254,7 +280,7 @@ Ersetze `1` durch die ausgegebene **RAG-Lauf-ID**. Die Ansicht zeigt den damalig
 | --- | --- |
 | `requested_at_utc` | UTC-Zeitpunkt unmittelbar vor dem Anbieteraufruf. |
 | `e5_load_ms` | Zeit, bis E5 für die Suche bereit ist. Der erste Aufruf lädt das Modell; weitere Aufrufe im selben Prozess können gerundet `0 ms` anzeigen. |
-| `retrieval_ms` | Dauer für den Fragevektor und die Abfrage in PostgreSQL. |
+| `retrieval_ms` | Dauer für den Fragevektor, die Abfrage in PostgreSQL und das optionale Umsortieren der Treffer. |
 | `client_duration_ms` | Lokal gemessene Dauer des Aufrufs an GPT oder Gemini, einschließlich Client und Netzwerk. |
 | `provider_duration_ms` (RAG) / `duration_ms` (Temperatur) | Vom Anbieter gemeldete Verarbeitungszeit. Der GPT-Adapter liest sie, wenn vorhanden, aus dem Header `openai-processing-ms`. Der Gemini-Adapter erfasst sie derzeit nicht. |
 | `input_tokens`, `output_tokens` | Vom Anbieter gemeldete Tokenzahlen. Das konfigurierte Ausgabelimit ist ein eigener Wert. |
@@ -270,11 +296,29 @@ Fehlende Werte bleiben in SQLite `NULL` und erscheinen in der Laufansicht als �
 .venv/bin/python -m unittest discover -s tests/api -v
 ```
 
-Die beiden `unittest`-Befehle starten **16 Tests**: zehn für Temperaturauswertung, Zitatprüfung und RAG-Antwortablauf sowie sechs für die API. Die API-Tests simulieren Suche und Modellantwort, prüfen die Laufhistorie mit temporären SQLite-Dateien und decken Fehlerfälle ab. Die Tests benötigen weder API-Schlüssel noch E5 oder eine laufende PostgreSQL-Instanz.
+Die beiden `unittest`-Befehle prüfen Temperaturauswertung, Zitatprüfung, RAG-Antwortablauf und API. Die API-Tests simulieren Suche und Modellantwort, prüfen die Laufhistorie mit temporären SQLite-Dateien und decken Fehlerfälle ab. Die Tests benötigen weder API-Schlüssel noch E5 oder eine laufende PostgreSQL-Instanz.
 
 Die [RAG-Prüfreihe](docs/versuche/rag-pruefreihe.md) dokumentiert getrennt, welche Belege die Suche findet und ob das Antwortmodell sie richtig verwendet. Am 20.11.2026 wurden sieben RAG-Fragen mit `--top-k 3` auf dem Mac ausgewertet, einschließlich zweier bereits gespeicherter H-12-Läufe. Für alle sechs Fragen mit erwarteten Belegen lagen die nötigen Absätze unter den ersten drei Treffern. GPT bestand sieben Fälle, Gemini sechs. Bei der Frage nach einer Bibliotheksöffnungszeit gab Gemini keine Uhrzeit an, nannte aber irrelevante Fundstellen. Ein angegebener Zeilenbereich stand so nicht im Prompt. Die Prüfreihe hält die Lauf-IDs fest; sie ist kein allgemeiner Modellvergleich.
 
-Die [Praxisprüfreihe zur Pumpenwartung](docs/versuche/rag-praxis-pruefreihe.md) enthält vier Fragen mit vorab festgelegten Belegen. Auf Cosi-Lab fanden sich am 25.11.2026 alle benötigten Belege unter den ersten drei Treffern. GPT und Gemini bestanden jeweils drei von vier Praxisfällen vollständig: Gemini übersah bei W03 die belegte Teilenummer, GPT gab bei W04 einen nicht gelieferten Zeilenbereich an. Abschließend wurde im Browser geprüft, dass Lauf #34 die Zitatwarnung zeigt und Lauf #33 ohne Warnung bleibt.
+In der ersten [Praxisprüfreihe zur Pumpenwartung](docs/versuche/rag-praxis-pruefreihe.md) am 25.11.2026 fand die Suche alle nötigen Belege für W01 bis W04 unter den ersten drei Treffern. GPT und Gemini bestanden jeweils drei von vier Fällen vollständig: Gemini übersah bei W03 die belegte Teilenummer, GPT gab bei W04 einen Zeilenbereich an, den der Prompt nicht enthielt. Im Browser zeigte Lauf #34 die Zitatwarnung; bei Lauf #33 erschien keine.
+
+### Suchcheck für den erweiterten Praxisbestand
+
+`rag_pruefe_suche.py` prüft für W01 bis W06, ob alle vorher festgelegten Fundstellen unter den zurückgegebenen Treffern liegen. Der Suchcheck benötigt E5 und den importierten Praxisbestand in PostgreSQL. Er ruft kein Antwortmodell auf und speichert keine Modellläufe.
+
+```bash
+RAG_BESTAND=praxis .venv/bin/python rag_pruefe_suche.py --top-k 3 --markdown
+RAG_BESTAND=praxis .venv/bin/python rag_pruefe_suche.py --top-k 3 --markdown --kennung-vorziehen
+```
+
+| Variante auf Cosi-Lab am 28.11.2026 | Bestanden | Befund |
+| --- | --- | --- |
+| E5, Top-k 3 | 4 von 6 | Bei W03 fehlt der direkte Beleg für die Teilenummer, bei W06 der Beleg für das Lagerfach. |
+| E5 mit Kennungsoption, Top-k 3 | 6 von 6 | Bei W03 erreicht der fehlende Beleg Rang 2, bei W06 Rang 3. |
+
+Bei einer Frage zu **P-17 und P-71** blieb die E5-Reihenfolge wie vorgesehen gleich. Der Browsertest auf Cosi-Lab bestätigte das Umsortieren bei W03. Die Zahlen oben messen, ob die nötigen Fundstellen gefunden wurden. Antwortqualität und Zitate werden separat geprüft.
+
+Als Nächstes folgen vier neue Prüffragen (W07 bis W10). Mit vorab festgelegten Sollbelegen vergleichen wir E5 mit Top-k 3 und Top-k 4 sowie die Kennungsoption mit Top-k 3. Dabei halten wir auch fest, welche unpassenden Treffer in den Prompt gelangen.
 
 ## Dateiübersicht
 
@@ -286,7 +330,7 @@ Die [Praxisprüfreihe zur Pumpenwartung](docs/versuche/rag-praxis-pruefreihe.md)
 | [`rag_cli.py`](rag_cli.py) | Terminalargumente lesen, Suche und Antwortablauf anstoßen und Ergebnisse anzeigen. |
 | [`rag_import.py`](rag_import.py) | Markdown-Absätze kodieren und den PostgreSQL-Suchbestand neu befüllen. |
 | [`rag_embeddings.py`](rag_embeddings.py) | E5-Modell für Import und Suche bereitstellen. |
-| [`rag_suche.py`](rag_suche.py) | Fragevektor berechnen, Fundstellen aus PostgreSQL holen und Laufzeiten messen. |
+| [`rag_suche.py`](rag_suche.py) | Fragevektor berechnen, Fundstellen holen, optional nach Kennung umsortieren und Laufzeiten messen. |
 | [`rag_db.py`](rag_db.py) | Dokumentbestand auswählen, PostgreSQL verbinden und nach Ähnlichkeit suchen. |
 | [`rag_prompt.py`](rag_prompt.py) | Prompt aus Frage und ausgewählten Fundstellen bauen. |
 | [`rag_ablauf.py`](rag_ablauf.py) | Modellaufruf, Zitatprüfung und SQLite-Speicherung verbinden. |
@@ -315,6 +359,7 @@ Die [Praxisprüfreihe zur Pumpenwartung](docs/versuche/rag-praxis-pruefreihe.md)
 | [`examples/eval_threshold_equal.csv`](examples/eval_threshold_equal.csv), [`examples/eval_mostly_missing.csv`](examples/eval_mostly_missing.csv), [`examples/eval_negative_temperatures.csv`](examples/eval_negative_temperatures.csv) | Vergleichsfälle für Schwellenwert, fehlende Werte und negative Temperaturen. |
 | [Fräse F-07](examples/rag/fraese-f07.md), [Maßprüfung H-12](examples/rag/masspruefung-h12.md), [Verstärkerrack „Nachtflug“](examples/rag/nachtflug-rack.md) | Standardbestand der RAG-Suche. |
 | [`examples/rag-praxis/`](examples/rag-praxis/), [Praxisprüfreihe](docs/versuche/rag-praxis-pruefreihe.md) | Fiktive Wartungsunterlagen, erwartete Belege und Modellvergleich zur Pumpenwartung. |
+| [`rag_pruefe_suche.py`](rag_pruefe_suche.py) | Erwartete Fundstellen mit den Treffern vergleichen und ihre Rangpositionen ausgeben. |
 | [`tests/test_temperature_storage.py`](tests/test_temperature_storage.py), [`tests/test_temperature_report_export.py`](tests/test_temperature_report_export.py) | Automatisierte Temperaturtests für SQLite-Läufe und Export. |
 | [`tests/test_rag_zitate.py`](tests/test_rag_zitate.py), [`tests/test_rag_ablauf.py`](tests/test_rag_ablauf.py) | Tests für die Zitatprüfung und das Zusammenspiel von Antwortablauf und SQLite. |
 | [`tests/api/test_rag_api.py`](tests/api/test_rag_api.py) | Tests für HTTP-Antworten, Fehlerfälle und gespeicherte Läufe. |
