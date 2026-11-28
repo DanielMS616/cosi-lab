@@ -9,11 +9,16 @@ Mit RAG_BESTAND=praxis starten. GPT und Gemini werden nicht aufgerufen.
 """
 
 
+import re
 import argparse
 
 from rag_suche import suche_fuer_frage
 
 TOP_K = 3
+
+# In unseren Praxisdokumenten beginnen Pumpenkennungen mit P-,
+# Teilenummern mit S-. P-17 soll nicht auf P-170 passen.
+KENNUNGSMUSTER = re.compile(r"\b(?:P|S)-[0-9]+\b")
 
 # Jeder Prüffall enthält seine Frage und eine Liste erwarteter Fundstellen.
 # Eine Fundstelle besteht aus Dateipfad, Startzeile und Endzeile.
@@ -80,12 +85,39 @@ def finde_belegrang(fundstellen, erwarteter_beleg):
     return None
 
 
-def pruefe_fall(fall, top_k, markdown=False):
+def suche_prueftreffer(frage, top_k, kennung_vorziehen):
+    """Liefert die Treffer für eine Frage, auf Wunsch nach Kennung sortiert."""
+    gesucht = set(KENNUNGSMUSTER.findall(frage.upper()))
+
+    # Nur bei genau einer eindeutigen Kennung ändern wir die Sortierung.
+    if not kennung_vorziehen or len(gesucht) != 1:
+        fundstellen, _, _ = suche_fuer_frage(frage, top_k=top_k)
+        return fundstellen
+
+    zielkennung = gesucht.pop()
+    kandidaten, _, _ = suche_fuer_frage(frage, top_k=max(top_k, 5))
+
+    # Prüfe den Ausschnitt selbst. Der Dateiname kann auch bei einem
+    # Absatz zur falschen Pumpe die gesuchte Kennung enthalten.
+    passend = []
+    rest = []
+    for fundstelle in kandidaten:
+        kennungen_im_text = KENNUNGSMUSTER.findall(fundstelle["text"].upper())
+        if zielkennung in kennungen_im_text:
+            passend.append(fundstelle)
+        else:
+            rest.append(fundstelle)
+
+    # Innerhalb beider Gruppen bleibt die Reihenfolge von E5 erhalten.
+    return (passend + rest)[:top_k]
+
+
+def pruefe_fall(fall, top_k, markdown=False, kennung_vorziehen=False):
     """Sucht einmal und gibt die Belegprüfung als Text oder Tabellenzeile aus."""
     if not markdown:
         print(f"\n{fall['kennung']}: {fall['frage']}")
 
-    fundstellen, _, _ = suche_fuer_frage(fall["frage"], top_k=top_k)
+    fundstellen = suche_prueftreffer(fall["frage"], top_k, kennung_vorziehen)
     alle_belege_gefunden = True
     befunde = []
 
@@ -114,7 +146,9 @@ def pruefe_fall(fall, top_k, markdown=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Prüft die RAG-Suche für W01 bis W05.")
+    parser = argparse.ArgumentParser(
+        description="Prüft die RAG-Suche für W01 bis W05."
+    )
     parser.add_argument(
         "--top-k",
         type=int,
@@ -122,15 +156,19 @@ def main():
         metavar="ANZAHL",
         help="Höchstens so viele Treffer je Frage (Standard: %(default)s).",
     )
-    # store_true bedeutet: Ohne Schalter ist args.markdown False.
     parser.add_argument(
         "--markdown",
         action="store_true",
         help="Gibt die Ergebnisse als Markdown-Tabelle fürs Prüfprotokoll aus.",
     )
+    parser.add_argument(
+        "--kennung-vorziehen",
+        action="store_true",
+        help="Zieht bei genau einer Kennung die passenden Ausschnitte vor.",
+    )
     args = parser.parse_args()
 
-    # Eine ungültige Trefferzahl soll gar keine Suche starten.
+    # Prüfe die Trefferzahl, bevor die erste Suche startet.
     if args.top_k < 1:
         parser.error("--top-k muss mindestens 1 sein.")
 
@@ -141,7 +179,14 @@ def main():
 
     bestanden = 0
     for fall in PRUEFFAELLE:
-        if pruefe_fall(fall, args.top_k, markdown=args.markdown):
+        # Jeder Fall bekommt dieselben Einstellungen aus dem Terminalaufruf.
+        fall_bestanden = pruefe_fall(
+            fall,
+            args.top_k,
+            markdown=args.markdown,
+            kennung_vorziehen=args.kennung_vorziehen,
+        )
+        if fall_bestanden:
             bestanden += 1
 
     zusammenfassung = f"{bestanden} von {len(PRUEFFAELLE)} Suchchecks bestanden."
@@ -150,7 +195,7 @@ def main():
     else:
         print(f"\nTop-k {args.top_k}: {zusammenfassung}")
 
-    # Das Ausgabeformat ändert nichts daran, ob der Suchcheck bestanden ist.
+    # Exit-Code 1 signalisiert, dass mindestens ein Fall nicht bestanden hat.
     return 0 if bestanden == len(PRUEFFAELLE) else 1
 
 

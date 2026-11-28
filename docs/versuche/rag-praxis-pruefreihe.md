@@ -180,3 +180,36 @@ Die Ränge von W01–W04 blieben gleich.
 | **Suchchecks bestanden** | **4 von 5** | **5 von 5** |
 
 Bei Top-k 3 fehlt weiterhin nur der Beleg für S-217 in W03.
+
+
+### Suchcheck mit Top-k 4
+
+| Fall | Erwartete Belege und Trefferpositionen | Ergebnis |
+| --- | --- | --- |
+| W01 | OK: Rang 1 von 4 · examples/rag-praxis/wartungsanweisung-p17.md:3-5 | bestanden |
+| W02 | OK: Rang 1 von 4 · examples/rag-praxis/stoerungsprotokoll-p17.md:3-5 | bestanden |
+| W03 | OK: Rang 4 von 4 · examples/rag-praxis/teileliste-p17.md:3-4; OK: Rang 2 von 4 · examples/rag-praxis/wartungsanweisung-p17.md:3-5 | bestanden |
+| W04 | OK: Rang 2 von 4 · examples/rag-praxis/teileliste-p17.md:3-4 | bestanden |
+| W05 | OK: Rang 2 von 4 · examples/rag-praxis/wartungsanweisung-p71.md:11-13 | bestanden |
+| **Gesamt** | | **5 von 5 Suchchecks bestanden.** |
+
+
+### Kennungen bei drei ausgegebenen Treffern vorgezogen
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand · Top-k 3.
+Die Variante sortiert bei einer einzelnen Kennung zunächst fünf
+Suchkandidaten um und gibt danach die ersten drei Treffer aus.
+
+| Fall | E5-Reihenfolge | Mit `--kennung-vorziehen` |
+| --- | --- | --- |
+| W01 | Wartungsanweisung: Rang 1 | Rang 1 |
+| W02 | Störungsprotokoll: Rang 1 | Rang 1 |
+| W03 | Teileliste fehlt; Wartungsanweisung: Rang 2 | Teileliste: Rang 2; Wartungsanweisung: Rang 1 |
+| W04 | Teileliste: Rang 2 | Rang 1 |
+| W05 | Wartungsanweisung P-71: Rang 2 | Rang 2 |
+| **Bestanden** | **4 von 5** | **5 von 5** |
+
+Geprüft wurde die Suche. GPT und Gemini wurden nicht aufgerufen.
+
+> ssh cosi-vpn 'cd ~/cosi-lab-e5-neustart && RAG_BESTAND=praxis .venv/bin/python - --top-k 3 --markdown --kennung-vorziehen' \
+  < rag_pruefe_suche.py
