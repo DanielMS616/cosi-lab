@@ -84,3 +84,18 @@ GPT und Gemini wurden nicht aufgerufen.
 | W04 | #36 | P-71-Preis: Rang 1; Teileliste P-17: Rang 2 | Fachlich bestanden: Preis für P-17 bleibt offen, S-217 exakt belegt. Reihenfolge der Teilfragen vertauscht. |
 
 Die Zitatprüfung meldete in beiden Läufen keine unbekannten Fundstellen.
+
+
+### GPT und Gemini mit vier Treffern verglichen
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand · Top-k 4.
+Pro Frage waren Prompt und Reihenfolge der Fundstellen identisch.
+
+| Fall | GPT | Gemini |
+| --- | --- | --- |
+| W03 | #35: bestanden. S-217 von Rang 4 und 120 Betriebsstunden von Rang 2 korrekt belegt. | #37: teilweise bestanden. Wartungsintervall korrekt belegt; S-217 trotz Beleg auf Rang 4 als unbelegt gemeldet. |
+| W04 | #36: fachlich bestanden. Preis bleibt offen; S-217 korrekt belegt. Reihenfolge vertauscht. | #38: vollständig bestanden. Preis zuerst als unbelegt markiert, danach S-217 korrekt belegt. |
+
+Bei W04 stand der Preis von 38 Euro für P-71 auf Rang 1. Kein Modell
+übertrug ihn auf P-17. Die Zitatprüfung meldete in keinem der vier
+Läufe eine unbekannte Fundstelle.
