@@ -130,3 +130,15 @@ teilfragen = (
     "Welche Teilenummer hat der Siebeinsatz für P-17?",
     "Nach wie vielen Betriebsstunden ist die Siebkontrolle für P-17 fällig?",
 )
+
+
+### W03 mit zwei direkten Belegen erneut beantwortet
+
+Basis: Gemini-Lauf #37. Die zweiteilige Frage und die Antwortregeln
+blieben gleich. Im Prompt standen nur `wartungsanweisung-p17.md:3-5`
+und `teileliste-p17.md:3-4` in ihrer ursprünglichen Reihenfolge.
+
+Gemini belegte das Intervall von 120 Betriebsstunden, meldete S-217
+aber weiterhin fälschlich als unbelegt. Die Antwort sprach vom
+Siebeinsatz, während die Wartungsanweisung das Ansaugsieb nennt.
+Die Probe wurde nicht als neuer SQLite-Lauf gespeichert.
