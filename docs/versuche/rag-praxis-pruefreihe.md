@@ -57,3 +57,18 @@ Fundstellen in derselben Reihenfolge.
 | W02 | #26: bestanden | #32: bestanden | Beide nennen Kunststoffspäne und 15 l/min nach der Reinigung, jeweils belegt. |
 | W03 | #27 und #30: teilweise bestanden | #29 und #33: bestanden | GPT belegt beide Angaben; Gemini stuft S-217 trotz direktem Beleg als unbelegt ein. |
 | W04 | #28: bestanden | #34: teilweise bestanden | GPT lässt den Preis offen und nennt S-217, vertauscht aber die Teilfragen und zitiert den nicht gelieferten Bereich `:3-7`. |
+
+
+### Suchvergleich mit drei und vier Treffern
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand mit P-71-Unterlagen.
+Ein Fall besteht, wenn alle erwarteten Belege in der Trefferliste stehen.
+GPT und Gemini wurden nicht aufgerufen.
+
+| Fall | Top-k 3 | Top-k 4 |
+| --- | --- | --- |
+| W01 | Wartungsanweisung: Rang 1 | Wartungsanweisung: Rang 1 |
+| W02 | Störungsprotokoll: Rang 1 | Störungsprotokoll: Rang 1 |
+| W03 | Teileliste fehlt; Wartungsanweisung: Rang 2 | Teileliste: Rang 4; Wartungsanweisung: Rang 2 |
+| W04 | Teileliste: Rang 2 | Teileliste: Rang 2 |
+| **Bestanden** | **3 von 4** | **4 von 4** |

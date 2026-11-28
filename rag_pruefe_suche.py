@@ -1,12 +1,15 @@
 """Prüft die RAG-Suche für die vier Praxisfälle W01 bis W04.
 
 Das Skript sucht einmal pro Frage und zeigt den Rang jedes erwarteten
-Belegs unter den ersten drei Treffern. Fehlt mindestens ein Beleg,
+Belegs unter den ersten Treffern; die Anzahl lässt sich mit --top-k
+einstellen (Standard: 3). Fehlt mindestens ein Beleg,
 endet der Aufruf mit Exit-Code 1.
 
 Mit RAG_BESTAND=praxis starten. GPT und Gemini werden nicht aufgerufen.
 """
 
+
+import argparse
 
 from rag_suche import suche_fuer_frage
 
@@ -68,12 +71,13 @@ def finde_belegrang(fundstellen, erwarteter_beleg):
     return None
 
 
-def pruefe_fall(fall):
+def pruefe_fall(fall, top_k):
     """Sucht einmal und prüft alle erwarteten Belege in den Treffern."""
     print(f"\n{fall['kennung']}: {fall['frage']}")
 
     # Auch W03 mit zwei Belegen braucht nur diese eine Suche.
-    fundstellen, _, _ = suche_fuer_frage(fall["frage"], top_k=TOP_K)
+    # Die Trefferzahl kommt aus main(): entweder der Standard oder der CLI-Wert.
+    fundstellen, _, _ = suche_fuer_frage(fall["frage"], top_k=top_k)
     alle_belege_gefunden = True
 
     for beleg in fall["belege"]:
@@ -82,7 +86,7 @@ def pruefe_fall(fall):
         rang = finde_belegrang(fundstellen, beleg)
 
         if rang is None:
-            print(f"FEHLT: {belegtext} (in den ersten {TOP_K} Treffern)")
+            print(f"FEHLT: {belegtext} (in den ersten {top_k} Treffern)")
             alle_belege_gefunden = False
         else:
             print(f"OK: Rang {rang} von {len(fundstellen)} · {belegtext}")
@@ -92,17 +96,28 @@ def pruefe_fall(fall):
 
 
 def main():
-    bestanden = 0
+    parser = argparse.ArgumentParser(description="Prüft die RAG-Suche für W01 bis W04.")
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=TOP_K,
+        metavar="ANZAHL",
+        help="Höchstens so viele Treffer je Frage (Standard: %(default)s).",
+    )
+    args = parser.parse_args()
 
-    # Auch wenn ein Fall scheitert, prüfen wir die restlichen Fälle weiter.
+    # Eine ungültige Trefferzahl soll gar keine Suche starten.
+    if args.top_k < 1:
+        parser.error("--top-k muss mindestens 1 sein.")
+
+    bestanden = 0
     for fall in PRUEFFAELLE:
-        if pruefe_fall(fall):
+        if pruefe_fall(fall, args.top_k):
             bestanden += 1
 
-    print(f"\n{bestanden} von {len(PRUEFFAELLE)} Suchchecks bestanden.")
-    if bestanden == len(PRUEFFAELLE):
-        return 0
-    return 1
+    print(f"\nTop-k {args.top_k}: {bestanden} von {len(PRUEFFAELLE)} Suchchecks bestanden.")
+    # Exit-Code 1 zeigt an, dass mindestens ein erwarteter Beleg fehlt.
+    return 0 if bestanden == len(PRUEFFAELLE) else 1
 
 
 if __name__ == "__main__":
