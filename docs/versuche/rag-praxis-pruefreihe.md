@@ -111,3 +111,22 @@ Gemini nannte S-217 und zitierte `teileliste-p17.md:3-4` von Rang 4.
 In der ursprünglichen zweiteiligen Frage hatte es die Teilenummer
 trotz desselben Belegs als unbelegt gemeldet. Für diese Probe wurde
 keine neue Suche gestartet und kein neuer SQLite-Lauf gespeichert.
+
+
+### W03: Gemeinsame Suche und getrennte Teilfragen
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand.
+Die beiden Teilfragen wurden mit je drei Treffern gesucht.
+
+| Erwarteter Beleg | Gemeinsame Frage | Eigene Teilfrage |
+| --- | --- | --- |
+| Teilenummer: `teileliste-p17.md:3-4` | Rang 4 | Rang 1 |
+| Wartungsintervall: `wartungsanweisung-p17.md:3-5` | Rang 2 | Rang 1 |
+
+Beide Belege sind bereits über den jeweils ersten Treffer verfügbar.
+Ein Antwortmodell wurde nicht aufgerufen.
+
+teilfragen = (
+    "Welche Teilenummer hat der Siebeinsatz für P-17?",
+    "Nach wie vielen Betriebsstunden ist die Siebkontrolle für P-17 fällig?",
+)
