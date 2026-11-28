@@ -142,3 +142,13 @@ Gemini belegte das Intervall von 120 Betriebsstunden, meldete S-217
 aber weiterhin fälschlich als unbelegt. Die Antwort sprach vom
 Siebeinsatz, während die Wartungsanweisung das Ansaugsieb nennt.
 Die Probe wurde nicht als neuer SQLite-Lauf gespeichert.
+
+
+### W03: Teilfragen separat gesucht und beantwortet
+
+28.11.2026 · Cosi-Lab · `gemini-3.5-flash-lite` · Top-k 1 je Teilfrage.
+
+| Teilfrage | Lauf | Suchbefund | Antwortbefund |
+| --- | --- | --- | --- |
+| Teilenummer | #39 | `teileliste-p17.md:3-4` auf Rang 1 | Nicht bestanden: S-217 trotz direktem Beleg als unbelegt gemeldet. |
+| Wartungsintervall | #40 | `wartungsanweisung-p17.md:3-5` auf Rang 1 | Bestanden: 120 Betriebsstunden, korrekt belegt. |
