@@ -70,6 +70,50 @@ class RagApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lauf["response_text"], modellantwort["text"])
         self.assertEqual(lauf["sources"], FUNDSTELLEN)
 
+    async def test_laufdetails_melden_nur_unbekannte_zitate(self):
+        datei = "examples/rag-praxis/teileliste-p17.md"
+        fundstellen = [
+            dict(datei=datei, startzeile=3, endzeile=4, text="P-17: S-217", wert=0.873),
+            dict(datei=datei, startzeile=6, endzeile=7, text="Lager: B-04", wert=0.867),
+        ]
+
+        # Der gemeinsame Bereich 3-7 wurde nie als einzelner Ausschnitt geliefert.
+        for bereich, unbekannt in (("3-7", [f"{datei}:3-7"]), ("3-4", [])):
+            with self.subTest(bereich=bereich):
+                zitat = f"{datei}:{bereich}"
+                modellantwort = {
+                    "text": f"Die Teilenummer lautet S-217 (Fundstelle: {zitat}).",
+                    "model": "gpt-test",
+                    "requested_at_utc": "2026-11-28T09:00:00+00:00",
+                    "client_duration_ms": 100,
+                }
+                with (
+                    patch("rag_api.RUN_DATABASE", self.datenbank),
+                    patch(
+                        "rag_api.suche_fuer_api", return_value=(fundstellen, 0, 30)
+                    ) as suche,
+                    patch(
+                        "rag_ablauf.rufe_antwortmodell_auf", return_value=modellantwort
+                    ) as modellaufruf,
+                ):
+                    post = await self.client.post(
+                        "/rag/antwort",
+                        json={"frage": "Welche Teilenummer hat P-17?", "anbieter": "gpt"},
+                    )
+                    self.assertEqual(post.status_code, 200, post.text)
+                    lauf_id = post.json()["lauf_id"]
+
+                    # Beim Abruf werden Suche und Antwortmodell nicht erneut aufgerufen.
+                    get = await self.client.get(f"/rag/laeufe/{lauf_id}")
+                    suche.assert_called_once()
+                    modellaufruf.assert_called_once()
+
+                self.assertEqual(get.status_code, 200, get.text)
+                self.assertEqual(
+                    get.json()["zitatpruefung"],
+                    {"erkannt": [zitat], "unbekannt": unbekannt},
+                )
+
     async def test_ohne_fundstellen_keine_modellantwort_und_kein_lauf(self):
         with (
             patch("rag_api.RUN_DATABASE", self.datenbank),
