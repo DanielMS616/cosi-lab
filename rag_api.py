@@ -84,6 +84,9 @@ class VorschauAnfrage(BaseModel):
     # Standard: drei Treffer. Die API gibt höchstens 20 Fundstellen zurück.
     top_k: int = Field(default=3, ge=1, le=20, strict=True)
 
+    # Ohne Angabe bleibt die bisherige Suche aktiv.
+    kennung_vorziehen: bool = Field(default=False, strict=True)
+
 
 class AntwortAnfrage(VorschauAnfrage):
     """Ergänzt Frage und Trefferzahl um die Wahl des Anbieters."""
@@ -91,7 +94,7 @@ class AntwortAnfrage(VorschauAnfrage):
     anbieter: Literal["gpt", "gemini"]
 
 
-def suche_fuer_api(frage, top_k):
+def suche_fuer_api(frage, top_k, *, kennung_vorziehen=False):
     """Ruft die gemeinsame Suche auf und meldet Datenbankfehler per HTTP."""
     # Erst hier die Suchabhängigkeiten laden. Der Abruf aus SQLite braucht sie nicht.
     from psycopg import OperationalError
@@ -100,7 +103,7 @@ def suche_fuer_api(frage, top_k):
     from rag_suche import suche_fuer_frage
 
     try:
-        return suche_fuer_frage(frage, top_k)
+        return suche_fuer_frage(frage, top_k, kennung_vorziehen=kennung_vorziehen)
     except SystemExit as fehler:
         # Die bisherige Suche beendet die CLI, wenn das Datenbankpasswort fehlt.
         # Hier melden wir den Fehler per HTTP, damit der Server weiterläuft.
@@ -121,7 +124,9 @@ def bereite_rag_anfrage_vor(anfrage):
         raise HTTPException(status_code=422, detail="Die Frage darf nicht leer sein.")
 
     # Beim Speichern des Laufs brauchen wir zusätzlich die beiden Messwerte.
-    fundstellen, e5_load_ms, retrieval_ms = suche_fuer_api(frage, anfrage.top_k)
+    fundstellen, e5_load_ms, retrieval_ms = suche_fuer_api(
+        frage, anfrage.top_k, kennung_vorziehen=anfrage.kennung_vorziehen
+    )
 
     # Ein leerer Suchbestand liefert keine Fundstellen und deshalb keinen Prompt.
     prompt = baue_prompt(frage, fundstellen) if fundstellen else None

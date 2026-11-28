@@ -50,6 +50,13 @@
       <form id="dokufrage-formular">
         <label for="frage">Frage</label>
         <textarea id="frage" rows="3" required></textarea>
+        <p>
+          <label>
+            <input id="kennung-vorziehen" type="checkbox" aria-describedby="kennung-hinweis">
+            Treffer mit gleicher Kennung vorziehen
+          </label>
+          <small id="kennung-hinweis">Wirkt bei einer einzelnen Kennung wie P-17 oder S-271.</small>
+        </p>
         <div class="formular-zeile">
           <div>
             <label for="top-k">Trefferzahl</label>
@@ -144,6 +151,7 @@
     const formular = document.querySelector("#dokufrage-formular");
     const frageFeld = document.querySelector("#frage");
     const trefferFeld = document.querySelector("#top-k");
+    const kennungFeld = document.querySelector("#kennung-vorziehen");
     const anbieterFeld = document.querySelector("#anbieter");
     const vorschauKnopf = document.querySelector("#vorschau-knopf");
     const antwortKnopf = document.querySelector("#antwort-knopf");
@@ -250,7 +258,12 @@
       // Nur der Antwortknopf darf einen Anbieteraufruf auslösen.
       const mitAntwort = ereignis.submitter === antwortKnopf;
       const pfad = mitAntwort ? "/rag/antwort" : "/rag/vorschau";
-      const anfrage = { frage, top_k: trefferFeld.valueAsNumber };
+      // .checked ist true oder false. Beide Aktionen senden denselben Schalter.
+      const anfrage = {
+        frage,
+        top_k: trefferFeld.valueAsNumber,
+        kennung_vorziehen: kennungFeld.checked,
+      };
       if (mitAntwort) anfrage.anbieter = anbieterFeld.value;
 
       // Sperre beide Knöpfe, solange die Anfrage läuft.
@@ -456,7 +469,7 @@
         }
 
         const daten = await antwort.json();
-        // Eine ältere Antwort darf eine frischere Liste nicht überschreiben.
+        // Eine ältere Antwort darf keine frischere Liste überschreiben.
         if (anfrageNummer !== letzteHistorienAnfrage) return;
         liste.replaceChildren();
         for (const lauf of daten.laeufe) {

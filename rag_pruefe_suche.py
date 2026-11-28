@@ -9,16 +9,12 @@ Mit RAG_BESTAND=praxis starten. GPT und Gemini werden nicht aufgerufen.
 """
 
 
-import re
 import argparse
 
 from rag_suche import suche_fuer_frage
 
 TOP_K = 3
 
-# In unseren Praxisdokumenten beginnen Pumpenkennungen mit P-,
-# Teilenummern mit S-. P-17 soll nicht auf P-170 passen.
-KENNUNGSMUSTER = re.compile(r"\b(?:P|S)-[0-9]+\b")
 
 # Jeder Prüffall enthält seine Frage und eine Liste erwarteter Fundstellen.
 # Eine Fundstelle besteht aus Dateipfad, Startzeile und Endzeile.
@@ -99,30 +95,11 @@ def finde_belegrang(fundstellen, erwarteter_beleg):
 
 
 def suche_prueftreffer(frage, top_k, kennung_vorziehen):
-    """Liefert die Treffer für eine Frage, auf Wunsch nach Kennung sortiert."""
-    gesucht = set(KENNUNGSMUSTER.findall(frage.upper()))
-
-    # Nur bei genau einer eindeutigen Kennung ändern wir die Sortierung.
-    if not kennung_vorziehen or len(gesucht) != 1:
-        fundstellen, _, _ = suche_fuer_frage(frage, top_k=top_k)
-        return fundstellen
-
-    zielkennung = gesucht.pop()
-    kandidaten, _, _ = suche_fuer_frage(frage, top_k=max(top_k, 5))
-
-    # Prüfe den Ausschnitt selbst. Der Dateiname kann auch bei einem
-    # Absatz zur falschen Pumpe die gesuchte Kennung enthalten.
-    passend = []
-    rest = []
-    for fundstelle in kandidaten:
-        kennungen_im_text = KENNUNGSMUSTER.findall(fundstelle["text"].upper())
-        if zielkennung in kennungen_im_text:
-            passend.append(fundstelle)
-        else:
-            rest.append(fundstelle)
-
-    # Innerhalb beider Gruppen bleibt die Reihenfolge von E5 erhalten.
-    return (passend + rest)[:top_k]
+    """Ruft dieselbe Suche wie die App auf und liefert nur die Fundstellen."""
+    fundstellen, _, _ = suche_fuer_frage(
+        frage, top_k=top_k, kennung_vorziehen=kennung_vorziehen
+    )
+    return fundstellen
 
 
 def pruefe_fall(fall, top_k, markdown=False, kennung_vorziehen=False):
