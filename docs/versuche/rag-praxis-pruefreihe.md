@@ -72,3 +72,15 @@ GPT und Gemini wurden nicht aufgerufen.
 | W03 | Teileliste fehlt; Wartungsanweisung: Rang 2 | Teileliste: Rang 4; Wartungsanweisung: Rang 2 |
 | W04 | Teileliste: Rang 2 | Teileliste: Rang 2 |
 | **Bestanden** | **3 von 4** | **4 von 4** |
+
+
+### GPT-Antworten mit vier Treffern im erweiterten Praxisbestand
+
+28.11.2026 · Cosi-Lab · Browser · `gpt-4o-mini` · Top-k 4.
+
+| Fall | Lauf-ID | Fundstellen im Prompt | Antwortbefund |
+| --- | --- | --- | --- |
+| W03 | #35 | Teileliste P-17: Rang 4; Wartungsanweisung P-17: Rang 2 | Bestanden: S-217 und 120 Betriebsstunden in der richtigen Reihenfolge genannt und einzeln belegt. |
+| W04 | #36 | P-71-Preis: Rang 1; Teileliste P-17: Rang 2 | Fachlich bestanden: Preis für P-17 bleibt offen, S-217 exakt belegt. Reihenfolge der Teilfragen vertauscht. |
+
+Die Zitatprüfung meldete in beiden Läufen keine unbekannten Fundstellen.
