@@ -249,3 +249,20 @@ Die Kennungsvariante kann bis zu fünf E5-Kandidaten umsortieren.
 | **Bestanden** | **4 von 6** | **6 von 6** |
 
 Geprüft wurde die Suche. Ein Antwortmodell wurde nicht aufgerufen.
+
+
+### W06 mit nach Kennung umsortierten Treffern beantwortet
+
+28.11.2026 · Cosi-Lab · `gemini-3.5-flash-lite` · Top-k 3.
+
+| Rang | Fundstelle |
+| --- | --- |
+| 1 | `stoerungsprotokoll-p71.md:3-5` |
+| 2 | `stoerungsprotokoll-p17.md:7-8` |
+| 3 | `wartungsanweisung-p71.md:11-13` |
+
+Bestanden: Gemini nannte 13 l/min und Fach B-07 in der Reihenfolge
+der Frage und belegte beide Angaben exakt. Den Vorfall vom
+20. November auf Rang 2 nutzte es nicht für die Antwort.
+Die Zitatprüfung meldete keine unbekannten Fundstellen.
+Die Probe wurde nicht als neuer SQLite-Lauf gespeichert.
