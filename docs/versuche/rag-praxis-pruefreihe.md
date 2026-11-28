@@ -283,3 +283,12 @@ Mit und ohne Kennungsvariante erschienen dieselben Fundstellen:
 
 Bestanden: Bei zwei verschiedenen Kennungen blieb die E5-Reihenfolge
 unverändert. Ein Antwortmodell wurde nicht aufgerufen.
+
+
+### Test neuer Kennungsoption im Browser
+
+Browsertest auf Cosi-Lab, 28.11.2026: Ohne Kennungsoption fehlt 
+examples/rag-praxis/teileliste-p17.md:3-4 unter den ersten drei Treffern. 
+Mit Kennungsoption erscheint die Teileliste auf Rang 2 und 
+examples/rag-praxis/wartungsanweisung-p17.md:3-5 auf Rang 1. 
+Erwartung erfüllt. Geprüft wurde die Vorschau.
