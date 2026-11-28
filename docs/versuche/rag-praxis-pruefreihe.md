@@ -11,6 +11,7 @@ Beim Test notieren wir Belegränge, Lauf-ID und Antwortbefund getrennt.
 | W03 | Welche Teilenummer hat der Siebeinsatz für P-17, und nach wie vielen Betriebsstunden ist die Siebkontrolle fällig? | `teileliste-p17.md:3-4` und `wartungsanweisung-p17.md:3-5` | S-217 und 120 Betriebsstunden. Beide Angaben einzeln belegen. |
 | W04 | Was kostet der Siebeinsatz für P-17, und welche Teilenummer hat er? | Kein Preisbeleg; `teileliste-p17.md:3-4` für die Teilenummer. | Preis als unbelegt benennen. Danach S-217 mit Fundstelle angeben. |
 | W05 | In welchem Fach liegt der Siebeinsatz S-271, und für welche Pumpe ist er vorgesehen? | `wartungsanweisung-p71.md:11-13` | Fach B-07 und Pumpe P-71. Nicht mit S-217 für P-17 im Fach B-04 verwechseln. |
+| W06 | Wie hoch war der Durchfluss der P-71 nach der Reinigung am 18. November, und in welchem Fach liegt ihr Siebeinsatz? | `stoerungsprotokoll-p71.md:3-5` und `wartungsanweisung-p71.md:11-13` | 13 l/min und Fach B-07. Beide Angaben getrennt belegen. |
 
 ## Protokoll
 
@@ -230,3 +231,21 @@ Bestanden: Gemini nannte S-217 und 120 Betriebsstunden in der
 Reihenfolge der Frage und belegte beide Angaben korrekt. Die
 Zitatprüfung meldete keine unbekannten Zitate. Der Versuch
 wurde nicht als neuer SQLite-Lauf gespeichert.
+
+
+### Umsortierung nach Kennung mit W06 geprüft
+
+28.11.2026 · Cosi-Lab · erweiterter Praxisbestand · drei ausgegebene Treffer.
+Die Kennungsvariante kann bis zu fünf E5-Kandidaten umsortieren.
+
+| Fall | E5-Reihenfolge | Mit `--kennung-vorziehen` |
+| --- | --- | --- |
+| W01 | Wartungsanweisung: Rang 1 | Rang 1 |
+| W02 | Störungsprotokoll: Rang 1 | Rang 1 |
+| W03 | Teileliste fehlt; Wartungsanweisung: Rang 2 | Teileliste: Rang 2; Wartungsanweisung: Rang 1 |
+| W04 | Teileliste: Rang 2 | Rang 1 |
+| W05 | Wartungsanweisung P-71: Rang 2 | Rang 2 |
+| W06 | Störungsprotokoll P-71: Rang 1; Lagerfachbeleg fehlt | Störungsprotokoll: Rang 1; Lagerfachbeleg: Rang 3 |
+| **Bestanden** | **4 von 6** | **6 von 6** |
+
+Geprüft wurde die Suche. Ein Antwortmodell wurde nicht aufgerufen.
