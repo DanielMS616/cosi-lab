@@ -213,3 +213,20 @@ Geprüft wurde die Suche. GPT und Gemini wurden nicht aufgerufen.
 
 > ssh cosi-vpn 'cd ~/cosi-lab-e5-neustart && RAG_BESTAND=praxis .venv/bin/python - --top-k 3 --markdown --kennung-vorziehen' \
   < rag_pruefe_suche.py
+
+
+### W03 mit nach Kennung umsortierten Treffern beantwortet
+
+28.11.2026 · Cosi-Lab · `gemini-3.5-flash-lite` · Top-k 3.
+Frage und Antwortregeln stammen aus Lauf #37.
+
+| Rang | Fundstelle |
+| --- | --- |
+| 1 | `wartungsanweisung-p17.md:3-5` |
+| 2 | `teileliste-p17.md:3-4` |
+| 3 | `teileliste-p17.md:6-7` |
+
+Bestanden: Gemini nannte S-217 und 120 Betriebsstunden in der
+Reihenfolge der Frage und belegte beide Angaben korrekt. Die
+Zitatprüfung meldete keine unbekannten Zitate. Der Versuch
+wurde nicht als neuer SQLite-Lauf gespeichert.
