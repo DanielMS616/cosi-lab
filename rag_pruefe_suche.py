@@ -80,14 +80,14 @@ def finde_belegrang(fundstellen, erwarteter_beleg):
     return None
 
 
-def pruefe_fall(fall, top_k):
-    """Sucht einmal und prüft alle erwarteten Belege in den Treffern."""
-    print(f"\n{fall['kennung']}: {fall['frage']}")
+def pruefe_fall(fall, top_k, markdown=False):
+    """Sucht einmal und gibt die Belegprüfung als Text oder Tabellenzeile aus."""
+    if not markdown:
+        print(f"\n{fall['kennung']}: {fall['frage']}")
 
-    # Auch W03 mit zwei Belegen braucht nur diese eine Suche.
-    # Die Trefferzahl kommt aus main(): entweder der Standard oder der CLI-Wert.
     fundstellen, _, _ = suche_fuer_frage(fall["frage"], top_k=top_k)
     alle_belege_gefunden = True
+    befunde = []
 
     for beleg in fall["belege"]:
         datei, start, ende = beleg
@@ -95,12 +95,21 @@ def pruefe_fall(fall, top_k):
         rang = finde_belegrang(fundstellen, beleg)
 
         if rang is None:
-            print(f"FEHLT: {belegtext} (in den ersten {top_k} Treffern)")
+            meldung = f"FEHLT: {belegtext} (in den ersten {top_k} Treffern)"
             alle_belege_gefunden = False
         else:
-            print(f"OK: Rang {rang} von {len(fundstellen)} · {belegtext}")
+            meldung = f"OK: Rang {rang} von {len(fundstellen)} · {belegtext}"
 
-    # Erst nach der Schleife steht fest, ob alle Belege gefunden wurden.
+        # In der Tabelle kommen alle Belege des Falls in dieselbe Zelle.
+        if markdown:
+            befunde.append(meldung)
+        else:
+            print(meldung)
+
+    if markdown:
+        ergebnis = "bestanden" if alle_belege_gefunden else "nicht bestanden"
+        print(f"| {fall['kennung']} | {'; '.join(befunde)} | {ergebnis} |")
+
     return alle_belege_gefunden
 
 
@@ -113,19 +122,35 @@ def main():
         metavar="ANZAHL",
         help="Höchstens so viele Treffer je Frage (Standard: %(default)s).",
     )
+    # store_true bedeutet: Ohne Schalter ist args.markdown False.
+    parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Gibt die Ergebnisse als Markdown-Tabelle fürs Prüfprotokoll aus.",
+    )
     args = parser.parse_args()
 
     # Eine ungültige Trefferzahl soll gar keine Suche starten.
     if args.top_k < 1:
         parser.error("--top-k muss mindestens 1 sein.")
 
+    if args.markdown:
+        print(f"\n### Suchcheck mit Top-k {args.top_k}\n")
+        print("| Fall | Erwartete Belege und Trefferpositionen | Ergebnis |")
+        print("| --- | --- | --- |")
+
     bestanden = 0
     for fall in PRUEFFAELLE:
-        if pruefe_fall(fall, args.top_k):
+        if pruefe_fall(fall, args.top_k, markdown=args.markdown):
             bestanden += 1
 
-    print(f"\nTop-k {args.top_k}: {bestanden} von {len(PRUEFFAELLE)} Suchchecks bestanden.")
-    # Exit-Code 1 zeigt an, dass mindestens ein erwarteter Beleg fehlt.
+    zusammenfassung = f"{bestanden} von {len(PRUEFFAELLE)} Suchchecks bestanden."
+    if args.markdown:
+        print(f"| **Gesamt** | | **{zusammenfassung}** |")
+    else:
+        print(f"\nTop-k {args.top_k}: {zusammenfassung}")
+
+    # Das Ausgabeformat ändert nichts daran, ob der Suchcheck bestanden ist.
     return 0 if bestanden == len(PRUEFFAELLE) else 1
 
 
